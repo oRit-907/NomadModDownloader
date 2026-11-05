@@ -217,6 +217,13 @@ namespace NomadModManager
 
         public static bool Available => ExePath != null;
 
+        /// <summary>Remembers where the app is (it does this itself on start, too).</summary>
+        public static void Register(string exe)
+        {
+            _cached = exe;
+            try { Directory.CreateDirectory(Pending.Dir(Paths.GameRootPath)); File.WriteAllText(RegFile, exe); } catch { }
+        }
+
         public static Version VersionOf(string exe)
         {
             try
@@ -246,7 +253,7 @@ namespace NomadModManager
             {
                 Path.Combine(home, "Desktop"), Path.Combine(home, "Downloads"), Path.Combine(home, "Documents"),
                 Path.Combine(home, "OneDrive\\Desktop"), Path.Combine(home, "OneDrive\\Documents"),
-                Path.Combine(local, "Programs"), Environment.GetEnvironmentVariable("ProgramFiles") ?? "", Paths.GameRootPath
+                Path.Combine(local, "Programs"), Path.Combine(Path.Combine(local, "Programs"), "NomadModDownloader"), Environment.GetEnvironmentVariable("ProgramFiles") ?? "", Paths.GameRootPath
             })
                 if (r.Length > 0 && Directory.Exists(r)) roots.Add(r);
 

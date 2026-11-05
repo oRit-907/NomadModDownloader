@@ -294,7 +294,7 @@ namespace NomadModManager
             if (Btn(new Rect(card.x + 16 * _s, card.yMax - 56 * _s, bw, 40 * _s), "Mods folder", false)) OpenFolder(Paths.PluginPath);
             if (Btn(new Rect(card.x + 28 * _s + bw, card.yMax - 56 * _s, bw, 40 * _s), "Downloader", false))
             {
-                if (!Downloader.Show()) Application.OpenURL($"https://www.nexusmods.com/{Nexus.GameDomain}/mods/{Nexus.DownloaderModId}");
+                if (!Downloader.Show()) GetDownloader();
             }
         }
 
@@ -366,18 +366,18 @@ namespace NomadModManager
             if (_category != null && !present.Contains(_category)) _category = null;
             y += 46 * _s;
 
-            if (!Downloader.Available || Downloader.IsOutdated(out _))
+            if (!Downloader.Available || Downloader.IsOutdated(out _) || AppFetcher.Busy)
             {
                 var banner = new Rect(r.x, y, r.width, 70 * _s);
                 Fill(banner, Alpha(CAccent, 0.14f), 12 * _s);
                 var outdated = Downloader.Available;
-                GUI.Label(new Rect(banner.x + 18 * _s, banner.y + 10 * _s, banner.width - 270 * _s, banner.height - 20 * _s),
-                    outdated
-                        ? "Your Nomad Mod Downloader is out of date. Update it to " + Downloader.MinVersion + " so Install here opens the mod in it, ready to download."
-                        : "Install uses Nomad Mod Downloader: Nexus needs you to click its download button, so the downloader opens the mod for you and installs it. It shows up here by itself.",
-                    _wrapSmall);
-                if (Btn(new Rect(banner.xMax - 240 * _s, banner.y + 14 * _s, 222 * _s, 42 * _s), outdated ? "Update downloader" : "Get the downloader", true))
-                    Application.OpenURL($"https://www.nexusmods.com/{Nexus.GameDomain}/mods/{Nexus.DownloaderModId}?tab=files");
+                var text = AppFetcher.Busy ? AppFetcher.Status
+                    : outdated ? "Your Nomad Mod Downloader is out of date. Update it to " + Downloader.MinVersion + " or newer so Install here opens the mod in it, ready to download."
+                    : "Install uses Nomad Mod Downloader, a free app: Nexus needs you to click its download button, so the app opens the mod for you and installs it. Get it from GitHub with one click.";
+                GUI.Label(new Rect(banner.x + 18 * _s, banner.y + 10 * _s, banner.width - 270 * _s, banner.height - 20 * _s), text, _wrapSmall);
+                var br = new Rect(banner.xMax - 240 * _s, banner.y + 14 * _s, 222 * _s, 42 * _s);
+                if (AppFetcher.Busy) ProgressBar(br, AppFetcher.Progress);
+                else if (Btn(br, outdated ? "Update downloader" : "Get the downloader", true)) GetDownloader();
                 y += 84 * _s;
             }
 
@@ -437,13 +437,27 @@ namespace NomadModManager
             if (Btn(new Rect(x + 120 * _s, by, 92 * _s, 40 * _s), "Page", false)) Application.OpenURL(m.PageUrl);
         }
 
+        /// <summary>Downloads Nomad Mod Downloader from GitHub and opens it.</summary>
+        private void GetDownloader()
+        {
+            if (AppFetcher.Busy) return;
+            Toast("Getting Nomad Mod Downloader from GitHub…", true);
+            AppFetcher.Start(_host, (ok, msg) => Toast(ok ? msg : msg + " You can also get it from GitHub: " + AppFetcher.ReleasesPage, ok));
+        }
+
+        private void ProgressBar(Rect r, float p)
+        {
+            Fill(r, CField, 11 * _s);
+            Fill(new Rect(r.x, r.y, Mathf.Max(22 * _s, r.width * Mathf.Clamp01(p)), r.height), CAccent, 11 * _s);
+            var mb = AppFetcher.Size > 0 ? $"  {AppFetcher.Size * Mathf.Clamp01(p) / 1048576f:0} / {AppFetcher.Size / 1048576f:0} MB" : "";
+            GUI.Label(r, $"{p * 100:0}%{mb}", Center(_smallBold, p > 0.5f ? CInk : CText));
+        }
+
         private void InstallFromNexus(int modId)
         {
             if (Downloader.IsOutdated(out var have))
             {
-                Downloader.Install(modId);
-                Application.OpenURL($"https://www.nexusmods.com/{Nexus.GameDomain}/mods/{modId}?tab=files");
-                Toast($"Your Nomad Mod Downloader is v{have}. Update it to {Downloader.MinVersion} for one-click installs from here.", false);
+                Toast($"Your Nomad Mod Downloader is v{have}. Use Update downloader above, then press Install again.", false);
                 return;
             }
             if (Downloader.Install(modId))
@@ -451,7 +465,7 @@ namespace NomadModManager
             else
             {
                 Application.OpenURL($"https://www.nexusmods.com/{Nexus.GameDomain}/mods/{modId}?tab=files");
-                Toast("Opened the mod on Nexus. Get Nomad Mod Downloader to install with one click.", false);
+                Toast("Opened the mod on Nexus. Press Get the downloader above to install with one click.", false);
             }
         }
 

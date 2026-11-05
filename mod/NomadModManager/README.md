@@ -2,7 +2,7 @@
 
 A BepInEx 5 plugin that adds a **Mods** button to Nomad Drive's main menu, styled like Nomad Mod Downloader.
 
-**Requires Nomad Mod Downloader 2.4.0 or newer**: install the app and open it once with your game folder set.
+**Requires Nomad Mod Downloader 2.4.0 or newer.** If it isn't installed, the menu's **Get the downloader** button downloads the latest release from this repo into `%LOCALAPPDATA%\Programs\NomadModDownloader` and opens it.
 
 - **Browse mods**: Nomad Drive mods on Nexus, sorted into categories (Nexus files them all as Miscellaneous), with thumbnails.
 - **Installed**: your mods grouped by author, with enable, disable, remove and update.
