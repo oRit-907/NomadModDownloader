@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>NomadModManager.Patcher</AssemblyName>
+    <RootNamespace>NomadModManager</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/*.cs" />
+    <Reference Include="BepInEx" HintPath="$(Lib)BepInEx.dll" Private="false" />
+    <Reference Include="Mono.Cecil" HintPath="$(Lib)Mono.Cecil.dll" Private="false" />
+  </ItemGroup>
+</Project>

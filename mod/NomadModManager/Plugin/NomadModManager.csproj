@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>NomadModManager</AssemblyName>
+    <RootNamespace>NomadModManager</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="BepInEx" HintPath="$(Lib)BepInEx.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(Lib)0Harmony.dll" Private="false" />
+    <Reference Include="Mono.Cecil" HintPath="$(Lib)Mono.Cecil.dll" Private="false" />
+    <Reference Include="Newtonsoft.Json" HintPath="$(Lib)Newtonsoft.Json.dll" Private="false" />
+    <Reference Include="EvilCore.UI" HintPath="$(Lib)EvilCore.UI.dll" Private="false" />
+    <Reference Include="Unity.TextMeshPro" HintPath="$(Lib)Unity.TextMeshPro.dll" Private="false" />
+    <Reference Include="UnityEngine" HintPath="$(Lib)UnityEngine.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(Lib)UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="UnityEngine.IMGUIModule" HintPath="$(Lib)UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="UnityEngine.UI" HintPath="$(Lib)UnityEngine.UI.dll" Private="false" />
+    <Reference Include="UnityEngine.UIModule" HintPath="$(Lib)UnityEngine.UIModule.dll" Private="false" />
+    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(Lib)UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="UnityEngine.UnityWebRequestModule" HintPath="$(Lib)UnityEngine.UnityWebRequestModule.dll" Private="false" />
+    <Reference Include="UnityEngine.ImageConversionModule" HintPath="$(Lib)UnityEngine.ImageConversionModule.dll" Private="false" />
+    <Reference Include="Unity.InputSystem" HintPath="$(Lib)Unity.InputSystem.dll" Private="false" />
+    <Reference Include="UnityEngine.InputLegacyModule" HintPath="$(Lib)UnityEngine.InputLegacyModule.dll" Private="false" />
+  </ItemGroup>
+</Project>

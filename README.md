@@ -25,6 +25,10 @@ Download `NomadModDownloader.exe` from **[Releases](../../releases)**. It's a si
 - 12 languages, with live translation of Nexus mod summaries.
 - Styled like Nomad Drive's own menus. The menu backgrounds are read from your own copy of the game, and the logo from Steam's library cache, so no game art ships with the app.
 
+## In-game Mods menu
+
+The repo also holds **Nomad Mod Manager**, a BepInEx plugin that adds a Mods menu to Nomad Drive's main menu (source and build steps in [`mod/NomadModManager`](mod/NomadModManager)). Each release has its zip next to the app.
+
 ## Finding the game
 
 The app finds Nomad Drive by itself: through Steam (any library, even a renamed install folder), the running game, Windows' installed-programs list, Epic and GOG, and finally a quick search of your drives. If it still can't, click **Change folder…**. Picking a folder inside the game, or the folder that contains it, also works.
