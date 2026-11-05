@@ -11,6 +11,9 @@ namespace NomadModDownloader.UI;
 /// (cream text, amber highlights, dark navy rounded panels) and the font is the
 /// game's Noto Sans. The menu backgrounds and logo are read from the player's own game install (GameArt).
 /// </summary>
+/// <summary>A heading row in a list (e.g. an author's name above their mods). Not selectable.</summary>
+internal sealed record ListHeader(string Text);
+
 internal static class Theme
 {
     // ---- colours (from the game's menu) ----
@@ -181,6 +184,14 @@ internal static class Theme
         lv.DrawItem += (_, e) =>
         {
             using (var bg = new SolidBrush(Panel)) e.Graphics.FillRectangle(bg, e.Bounds);
+            if (e.Item!.Tag is ListHeader h)
+            {
+                var tr = new Rectangle(e.Bounds.X + 4, e.Bounds.Y + 6, e.Bounds.Width - 8, e.Bounds.Height - 6);
+                TextRenderer.DrawText(e.Graphics, h.Text, Bold, tr, Accent, TextFormatFlags.Bottom | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                using var line = new Pen(Line);
+                e.Graphics.DrawLine(line, e.Bounds.X + 4, e.Bounds.Bottom - 1, e.Bounds.Right - 4, e.Bounds.Bottom - 1);
+                return;
+            }
             var fill = e.Item!.Selected ? Line : (e.ItemIndex % 2 == 1 ? Row : Panel);
             if (fill != Panel)
             {
@@ -193,6 +204,7 @@ internal static class Theme
         };
         lv.DrawSubItem += (_, e) =>
         {
+            if (e.Item!.Tag is ListHeader) return; // drawn whole by DrawItem
             var selected = e.Item!.Selected;
             static bool Ours(Color c) => c == Good || c == Warn || c == Bad || c == Accent || c == Muted;
             var color = e.ColumnIndex == 0
@@ -201,6 +213,8 @@ internal static class Theme
             TextRenderer.DrawText(e.Graphics, e.SubItem!.Text, e.ColumnIndex == 0 ? Bold : Body, Rectangle.Inflate(e.Bounds, -8, 0), color,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         };
+        // Heading rows can't be selected.
+        lv.ItemSelectionChanged += (_, e) => { if (e.IsSelected && e.Item?.Tag is ListHeader) e.Item.Selected = false; };
         // Taller rows
         lv.SmallImageList = new ImageList { ImageSize = new Size(1, Body.Height + 18) };
 

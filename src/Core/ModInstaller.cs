@@ -11,6 +11,7 @@ public sealed class InstalledMod
     public int ModId { get; set; }
     public int FileId { get; set; }
     public string Name { get; set; } = "";           // mod name
+    public string Author { get; set; } = "";         // Nexus author, for grouping the Installed list
     public string FileName { get; set; } = "";       // Nexus file name (used to match updates)
     public string Version { get; set; } = "";
     public DateTime FileDate { get; set; }

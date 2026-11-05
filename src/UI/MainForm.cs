@@ -51,6 +51,9 @@ internal sealed partial class MainForm : Form
 
     private int _browseRequest;
     private ModInfo? _selectedMod;
+    /// <summary>Nexus mods seen while browsing, by simplified name: lets mods added by hand show their author.</summary>
+    private readonly Dictionary<string, ModInfo> _knownByName = new();
+    private bool _fillingAuthors;
     private readonly System.Windows.Forms.Timer _searchDelay = new() { Interval = 450 };
 
     // installed
@@ -851,6 +854,8 @@ internal sealed partial class MainForm : Form
             var installed = _manifest.Mods.Select(m => m.ModId).ToHashSet();
             foreach (var m in mods)
             {
+                var key = NameKey(m.Name);
+                if (key.Length >= 4) _knownByName.TryAdd(key, m);
                 if (IsLoaderPack(m)) { _browseHidden++; continue; }
                 var item = new ListViewItem(installed.Contains(m.ModId) || m.ModId == SelfModId ? "✓ " + m.Name : m.Name) { Tag = m };
                 item.SubItems.Add(m.Author);
@@ -1161,7 +1166,7 @@ internal sealed partial class MainForm : Form
         SetStatus(L.F("Installing {0}…", mod.Name));
         var meta = new InstalledMod
         {
-            Id = modId > 0 ? $"{modId}:{fileId}" : "local:" + Fmt.SafeFileName(file.Name), ModId = modId, FileId = fileId, Name = mod.Name, FileName = file.Name,
+            Id = modId > 0 ? $"{modId}:{fileId}" : "local:" + Fmt.SafeFileName(file.Name), ModId = modId, FileId = fileId, Name = mod.Name, FileName = file.Name, Author = mod.Author ?? "",
             Version = string.IsNullOrEmpty(file.Version) ? mod.Version : file.Version, FileDate = file.Date
         };
         try { ModInstaller.Install(plan, game, _manifest, meta); }
@@ -1257,17 +1262,21 @@ internal sealed partial class MainForm : Form
         if (_game != null && ModInstaller.Reconcile(_manifest, _game)) _manifest.Save();
         _installedList.BeginUpdate();
         _installedList.Items.Clear();
+
+        // Every row with the author it's grouped under.
+        var rows = new List<(string Author, ListViewItem Item)>();
         foreach (var m in _manifest.Mods.OrderBy(m => m.Name))
         {
             var status = m.Update != null ? L.F("Update: v{0}", m.Update.Version) : m.Disabled ? L.T("Disabled") : L.T("Enabled");
-            var display = m.Name;
-            var item = new ListViewItem(display) { Tag = m };
+            var item = new ListViewItem(m.Name) { Tag = m };
             item.SubItems.Add(m.Version);
             var st = item.SubItems.Add(status);
             st.ForeColor = m.Update != null ? Theme.Accent : m.Disabled ? Theme.Warn : Theme.Good;
             item.SubItems.Add(m.Location);
             item.SubItems.Add(Fmt.Date(m.InstalledAt));
-            _installedList.Items.Add(item);
+            var author = m.Author.Length > 0 ? m.Author
+                : _knownByName.Values.FirstOrDefault(k => k.ModId == m.ModId && m.ModId > 0)?.Author ?? "";
+            rows.Add((author, item));
         }
         if (_game != null)
         {
@@ -1280,11 +1289,66 @@ internal sealed partial class MainForm : Form
                 st.ForeColor = disabled ? Theme.Warn : Theme.Muted;
                 item.SubItems.Add(rel.Replace('/', '\\'));
                 item.SubItems.Add("");
-                _installedList.Items.Add(item);
+                // Match by folder name, or by the plugin names inside it (e.g. folder "NomadHUD" holds "Retro RV HUD").
+                var names = new List<string> { folderName, Path.GetFileNameWithoutExtension(folderName) };
+                names.AddRange(UntrackedPluginNames(rel));
+                var author = names.Select(n => _knownByName.TryGetValue(NameKey(n), out var k) ? k.Author : "").FirstOrDefault(a => a.Length > 0) ?? "";
+                rows.Add((author, item));
             }
+        }
+
+        var unknown = L.T("Unknown author");
+        foreach (var g in rows.GroupBy(r => r.Author.Length > 0 ? r.Author : unknown)
+                              .OrderBy(g => g.Key == unknown ? 1 : 0).ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            _installedList.Items.Add(new ListViewItem($"{g.Key}  ({g.Count()})") { Tag = new ListHeader($"{g.Key}  ({g.Count()})") });
+            foreach (var r in g) _installedList.Items.Add(r.Item);
         }
         _installedList.EndUpdate();
         UpdateInstalledButtons();
+        _ = FillAuthorsAsync();
+    }
+
+    private List<string> UntrackedPluginNames(string rel)
+    {
+        var result = new List<string>();
+        if (_game == null) return result;
+        try
+        {
+            var full = ModInstaller.SafeJoin(_game.Root, rel);
+            var dlls = Directory.Exists(full)
+                ? Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories).Where(f => f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".dll.disabled", StringComparison.OrdinalIgnoreCase))
+                : new[] { full, full + ".disabled" }.Where(File.Exists);
+            foreach (var d in dlls) result.AddRange(PluginInspector.Read(d).Select(p => p.Name));
+        }
+        catch { }
+        return result;
+    }
+
+    private static string NameKey(string name) => new string((name ?? "").Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+
+    /// <summary>Mods installed before authors were recorded: look their authors up once, then redraw.</summary>
+    private async Task FillAuthorsAsync()
+    {
+        if (_fillingAuthors) return;
+        var missing = _manifest.Mods.Where(m => m.ModId > 0 && m.Author.Length == 0).ToList();
+        if (missing.Count == 0) return;
+        _fillingAuthors = true;
+        var changed = false;
+        try
+        {
+            foreach (var m in missing)
+            {
+                try
+                {
+                    var info = await _api.GetModAsync(m.ModId, _closing.Token);
+                    if (info != null && info.Author.Length > 0) { m.Author = info.Author; changed = true; }
+                }
+                catch { }
+            }
+            if (changed) { _manifest.Save(); RefreshInstalled(); }
+        }
+        finally { _fillingAuthors = false; }
     }
 
     private void UpdateInstalledButtons()
@@ -1293,7 +1357,7 @@ internal sealed partial class MainForm : Form
         var tag = _installedList.SelectedItems.Count > 0 ? _installedList.SelectedItems[0].Tag : null;
         _updateButton.Enabled = tag is InstalledMod { Update: not null };
         _removeButton.Enabled = tag is InstalledMod;
-        _toggleButton.Enabled = tag != null;
+        _toggleButton.Enabled = tag is InstalledMod or Untracked;
         _toggleButton.Text = tag switch
         {
             InstalledMod m => m.Disabled ? L.T("Enable") : L.T("Disable"),

@@ -9,7 +9,7 @@ Download `NomadModDownloader.exe` from **[Releases](../../releases)**. It's a si
 - Browse, search and sort Nomad Drive mods, with a picker for any version, older ones included.
 - Log in to Nexus once. **Install** opens the file's page with the download button highlighted. Click **Manual download → Slow download** and the app installs the mod automatically.
 - Mods are placed automatically: loose DLLs go to `BepInEx\plugins\<Mod>\`, and archives with their own `BepInEx\…` layout are unpacked as laid out. Zip, 7z and rar all work.
-- The **Installed** tab checks for updates, enables or disables mods, and uninstalls them cleanly, restoring any files a mod replaced.
+- The **Installed** tab lists mods grouped by author, checks for updates, enables or disables mods, and uninstalls them cleanly, restoring any files a mod replaced.
 - **Play** and **Play without mods** buttons. Mods switch back on by themselves after a vanilla run.
 - **Problems** reads the game's logs after each session and says which mod failed and why: missing requirements, duplicates, errors, crashes and conflicts. **Copy for a bug report** puts it all on the clipboard.
 - **Mod requirements**: if a mod needs other mods, the app offers to install those first.
