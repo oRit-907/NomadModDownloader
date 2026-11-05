@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A BepInEx 6 (Unity Mono) plugin that hosts BepInEx 5's runtime, so BepInEx 5 mods run on BepInEx 6.
+       Build: put the game's and both BepInEx versions' DLLs in lib/ (see README.md). -->
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>BepInEx5Compat</AssemblyName>
+    <RootNamespace>BepInEx5Compat</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Version>1.0.0</Version>
+    <Company>AkoRit</Company>
+    <DebugType>none</DebugType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <Lib>$(MSBuildThisFileDirectory)lib/</Lib>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="BepInEx.Core" HintPath="$(Lib)bep6/BepInEx.Core.dll" Private="false" />
+    <Reference Include="BepInEx.Unity.Mono" HintPath="$(Lib)bep6/BepInEx.Unity.Mono.dll" Private="false" />
+    <Reference Include="BepInEx.Preloader.Core" HintPath="$(Lib)bep6/BepInEx.Preloader.Core.dll" Private="false" />
+    <Reference Include="BepInEx.Unity.Common" HintPath="$(Lib)bep6/BepInEx.Unity.Common.dll" Private="false" />
+    <Reference Include="BepInEx" HintPath="$(Lib)bep5/BepInEx.dll" Private="false" Aliases="BE5" />
+    <Reference Include="UnityEngine" HintPath="$(Lib)game/UnityEngine.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(Lib)game/UnityEngine.CoreModule.dll" Private="false" />
+  </ItemGroup>
+</Project>

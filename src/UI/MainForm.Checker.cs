@@ -11,7 +11,7 @@ internal sealed partial class MainForm
     private ListView _checkList = null!;
     private TextBox _checkDetail = null!;
     private Label _checkHeader = null!;
-    private Button _checkFix = null!, _checkFixAll = null!;
+    private Button _checkFix = null!, _checkFixAll = null!, _checkSwitch = null!;
     private List<CheckItem> _checks = new();
     private string? _latestBepInEx;
     private bool _latestLooked;
@@ -32,7 +32,9 @@ internal sealed partial class MainForm
         folder.Click += (_, _) => { if (_game != null) Web.Open(_game.Root); };
         var copy = Theme.Button(L.T("Copy for a bug report"));
         copy.Click += (_, _) => CopyCheckReport();
-        foreach (var b in new[] { again, _checkFix, _checkFixAll, folder, copy }) { b.Margin = new Padding(0, 0, 8, 6); toolbar.Controls.Add(b); }
+        _checkSwitch = Theme.Button(L.T("Switch back to BepInEx 5…"));
+        _checkSwitch.Click += async (_, _) => await RunExclusive(SwitchBepInExMajorAsync);
+        foreach (var b in new[] { again, _checkFix, _checkFixAll, _checkSwitch, folder, copy }) { b.Margin = new Padding(0, 0, 8, 6); toolbar.Controls.Add(b); }
 
         _checkHeader = new Label { Dock = DockStyle.Top, Height = Theme.Bold.Height + 16, Font = Theme.Bold, ForeColor = Theme.Text, BackColor = Color.Transparent };
         _checkList = Theme.List();
@@ -109,6 +111,9 @@ internal sealed partial class MainForm
                           : L.T("✓  BepInEx is set up correctly for Nomad Drive.");
         _checkHeader.ForeColor = errors > 0 ? Theme.Bad : bad > 0 ? Theme.Warn : Theme.Good;
         _checkFixAll.Enabled = _checks.Any(c => c.Level >= CheckLevel.Warning && c.FileFix);
+        var major = BepInExManager.MajorOf(game);
+        _checkSwitch.Visible = major != 0;
+        _checkSwitch.Text = major == 6 ? L.T("Switch back to BepInEx 5…") : L.T("Upgrade to BepInEx 6…");
         SetBadge("Check BepInEx", errors > 0 ? errors.ToString() : null);
         return bad;
     }
@@ -129,6 +134,9 @@ internal sealed partial class MainForm
         CheckFix.InstallBepInEx => L.T("Install BepInEx"),
         CheckFix.RepairBepInEx => L.T("Repair BepInEx"),
         CheckFix.UpdateBepInEx => L.T("Update BepInEx"),
+        CheckFix.UpgradeToBepInEx6 => L.T("Upgrade to BepInEx 6"),
+        CheckFix.InstallCompat => L.T("Install BepInEx 5 support"),
+        CheckFix.OpenInstalled => L.T("Open Installed"),
         CheckFix.WriteDoorstop => L.T("Fix doorstop_config.ini"),
         CheckFix.EnableDoorstop => L.T("Switch BepInEx on"),
         CheckFix.InstallDotNetFix => L.T("Set up the .NET fix"),
@@ -151,21 +159,22 @@ internal sealed partial class MainForm
         if (game == null || items.Count == 0) return;
 
         if (items.Count == 1 && items[0].Fix == CheckFix.OpenProblems) { ShowPage("Problems"); return; }
+        if (items.Count == 1 && items[0].Fix == CheckFix.OpenInstalled) { ShowPage("Installed"); return; }
         if (items.Count == 1 && items[0].Fix == CheckFix.Play) { await PlayAsync(vanilla: false); return; }
         items = items.Where(i => i.FileFix).ToList();
         if (items.Count == 0) return;
         if (game.IsRunning()) { MessageBox.Show(this, L.T("Close Nomad Drive first, then try again."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
 
         // One BepInEx download covers install, repair and update; the other fixes are quick file changes.
-        var bep = items.Where(i => i.Fix is CheckFix.InstallBepInEx or CheckFix.RepairBepInEx or CheckFix.UpdateBepInEx).OrderBy(i => i.Fix).FirstOrDefault();
-        var rest = BepInExChecker.Merge(items.Where(i => i.Fix is not (CheckFix.InstallBepInEx or CheckFix.RepairBepInEx or CheckFix.UpdateBepInEx)));
+        static bool IsBep(CheckFix f) => f is CheckFix.InstallBepInEx or CheckFix.RepairBepInEx or CheckFix.UpdateBepInEx or CheckFix.UpgradeToBepInEx6;
+        var bep = items.Where(i => IsBep(i.Fix)).OrderBy(i => i.Fix).FirstOrDefault();
+        var rest = BepInExChecker.Merge(items.Where(i => !IsBep(i.Fix)));
 
         BepInExPlan? plan = null;
         if (bep != null)
         {
-            SetStatus(L.T("Finding the latest BepInEx 5…"));
-            plan = await BepInExManager.PlanAsync(_http, game, _closing.Token);
-            SetStatus("");
+            // Updating stays on BepInEx 5 (people who switched back); everything else installs BepInEx 6.
+            plan = bep.Fix == CheckFix.UpdateBepInEx ? await BepInExManager.Plan5Async(_http, game, _closing.Token) : BepInExManager.Plan6(game);
         }
 
         var lines = new List<string>();
@@ -174,6 +183,7 @@ internal sealed partial class MainForm
             {
                 CheckFix.InstallBepInEx => L.F("Install BepInEx {0} ({1}) from {2}", plan.Version, plan.Architecture, plan.Url.Host),
                 CheckFix.UpdateBepInEx => L.F("Update BepInEx to {0} (plugins, settings and doorstop_config.ini are kept)", plan.Version),
+                CheckFix.UpgradeToBepInEx6 => L.F("Replace BepInEx 5 with BepInEx {0} and BepInEx 5 support. The old BepInEx goes to a backup; plugins and settings are kept.", plan.Version),
                 _ => L.F("Reinstall BepInEx {0} ({1}). The old files go to a backup; plugins and settings are kept.", plan.Version, plan.Architecture),
             }));
         foreach (var i in rest) lines.Add("• " + FixLabel(i.Fix) + ": " + i.Title);
@@ -191,7 +201,7 @@ internal sealed partial class MainForm
                     var w = await BepInExManager.UpdateAsync(_http, game, plan, Progress(), _closing.Token);
                     done.Add(L.F("Updated BepInEx to {0} ({1} files).", plan.Version, w.Count));
                 }
-                else if (bep.Fix == CheckFix.RepairBepInEx)
+                else if (bep.Fix is CheckFix.RepairBepInEx or CheckFix.UpgradeToBepInEx6)
                 {
                     var (w, backup) = await BepInExManager.RepairAsync(_http, game, plan, Progress(), _closing.Token);
                     done.Add(L.F("Reinstalled BepInEx {0} ({1} files). Old files: {2}", plan.Version, w.Count, backup));
@@ -208,7 +218,7 @@ internal sealed partial class MainForm
             foreach (var i in rest.OrderBy(i => i.Fix == CheckFix.InstallDotNetFix ? 1 : 0))
             {
                 // A reinstall above already wrote a fresh doorstop_config.ini and the .NET fix.
-                if (bep != null && i.Fix is CheckFix.WriteDoorstop or CheckFix.EnableDoorstop) continue;
+                if (bep != null && i.Fix is CheckFix.WriteDoorstop or CheckFix.EnableDoorstop or CheckFix.InstallCompat) continue;
                 var msg = BepInExChecker.Apply(i, game);
                 if (msg.Length > 0) done.Add(msg);
             }
@@ -224,6 +234,56 @@ internal sealed partial class MainForm
         RefreshGame();
         var left = await RefreshChecksAsync(lookOnline: false);
         SetStatus(done.Count == 0 ? L.T("Nothing changed.") : left == 0 ? L.T("Fixed. BepInEx is set up correctly for Nomad Drive.") : L.F("Fixed {0} thing(s). {1} still need a look.", done.Count, left), good: done.Count > 0 && left == 0);
+    }
+
+    /// <summary>BepInEx 6 is the default; this switches an install back to BepInEx 5 (or forward again).</summary>
+    private async Task SwitchBepInExMajorAsync()
+    {
+        var game = RequireGame();
+        if (game == null) return;
+        if (game.IsRunning()) { MessageBox.Show(this, L.T("Close Nomad Drive first, then try again."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        var now = BepInExManager.MajorOf(game);
+        BepInExPlan plan;
+        string ask;
+        if (now == 6)
+        {
+            SetStatus(L.T("Finding the latest BepInEx 5…"));
+            plan = await BepInExManager.Plan5Async(_http, game, _closing.Token);
+            SetStatus("");
+            var built6 = ModLoadDoctor.ModsBuiltFor(game, "6");
+            ask = L.F("Switch back to BepInEx {0}?\n\n", plan.Version) +
+                  (built6.Count > 0 ? L.F("{0} of your mods are built for BepInEx 6 and won't load on BepInEx 5:\n", built6.Count) + string.Join("\n", built6.Take(10).Select(m => "  • " + m)) + (built6.Count > 10 ? "\n  …" : "") + "\n\n" : "") +
+                  L.T("BepInEx 6's files go to a backup. Your plugins, patchers and settings are kept.");
+        }
+        else
+        {
+            plan = BepInExManager.Plan6(game);
+            ask = L.F("Upgrade to BepInEx {0}?\n\n", plan.Version) +
+                  L.T("BepInEx 5 support is installed with it, so your current mods keep working.") + "\n\n" +
+                  L.F("From:  {0}", plan.Url.Host + plan.Url.AbsolutePath) + "\n\n" +
+                  L.T("Your current BepInEx goes to a backup, and your plugins and settings are kept. You can switch back here at any time.");
+        }
+        if (MessageBox.Show(this, ask, now == 6 ? L.T("Switch to BepInEx 5") : L.T("Upgrade to BepInEx 6"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+        {
+            SetStatus(L.T("Nothing changed."));
+            return;
+        }
+        try
+        {
+            SetStatus(L.F("Downloading BepInEx {0}…", plan.Version));
+            var (w, backup) = await BepInExManager.RepairAsync(_http, game, plan, Progress(), _closing.Token);
+            HideProgress();
+            Log(L.F("Installed BepInEx {0} ({1} files). The previous BepInEx is in {2}", plan.Version, w.Count, backup));
+            SetStatus(L.F("BepInEx {0} installed. Play the game once, then check here.", plan.Version), good: true);
+        }
+        catch (Exception ex)
+        {
+            HideProgress();
+            Log(L.F("Fix failed: {0}", ex.Message));
+            MessageBox.Show(this, L.F("That didn't work: {0}", ex.Message), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        RefreshGame();
+        await RefreshChecksAsync(lookOnline: false);
     }
 
     private void CopyCheckReport()

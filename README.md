@@ -23,6 +23,8 @@ Download `NomadModDownloader.exe` from **[Releases](../../releases)**. It's a si
 - A Discord button next to PLAY for the Nomad Drive community.
 - **Check BepInEx** tab: checks the BepInEx install, the Nomad Drive .NET fix, the last session's mod errors and common breakages (antivirus-removed or blocked files, MelonLoader leftovers, mods unpacked into the wrong folder), with one-click fixes that always ask first and back up anything they remove.
 - Sets up Nomad Drive's .NET fix automatically when it installs BepInEx (the game's stripped mscorlib otherwise crashes BepInEx on start).
+- Installs **BepInEx 6** with **BepInEx 5 support** ([`mod/BepInEx5Compat`](mod/BepInEx5Compat)), so mods built for either version load. Check BepInEx can switch an install back to BepInEx 5.
+- The **Installed** tab shows whether each mod started at the last game start and, if it didn't, why and how to fix it.
 - Works with the in-game **Mods** menu (Nomad Mod Manager): its **Install** and **Update** buttons open the mod here, ready to download, and mods can be installed while the game is running. Files that are in use are swapped in the next time the game starts.
 - 12 languages, with live translation of Nexus mod summaries.
 - Styled like Nomad Drive's own menus. The menu backgrounds are read from your own copy of the game, and the logo from Steam's library cache, so no game art ships with the app.

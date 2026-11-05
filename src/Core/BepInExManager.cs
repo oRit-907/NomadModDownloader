@@ -7,7 +7,8 @@ namespace NomadModDownloader.Core;
 
 public enum BepInExState { NotInstalled, NeedsFirstRun, Ready, Disabled, Broken, Il2CppGame }
 
-public sealed record BepInExStatus(BepInExState State, string? Version, string Message);
+/// <param name="Major">5 or 6 when installed, 0 otherwise.</param>
+public sealed record BepInExStatus(BepInExState State, string? Version, string Message, int Major = 0);
 
 public sealed record BepInExPlan(string Version, Uri Url, long SizeBytes, string Architecture, string GameRoot);
 
@@ -16,9 +17,41 @@ public static class BepInExManager
     // Fallback if the GitHub API can't be reached (rate limit, offline API).
     private const string PinnedVersion = "5.4.23.5";
 
+    /// <summary>
+    /// The BepInEx the app installs: BepInEx 6 for Unity Mono, pinned to a known build (BepInEx 6 is still a
+    /// pre-release, so "latest" could be anything). BepInEx 5 mods keep working through the BepInEx 5
+    /// compatibility layer (<see cref="BepInExCompat"/>) that's set up with it.
+    /// </summary>
+    public const string Bep6Version = "6.0.0-pre.2";
+
+    /// <summary>5 or 6 from the files in BepInEx\core, 0 if neither is there.</summary>
+    public static int MajorOf(GameInstall game)
+    {
+        var core = Path.Combine(game.BepInExDir, "core");
+        if (File.Exists(Path.Combine(core, "BepInEx.Unity.Mono.dll")) || File.Exists(Path.Combine(core, "BepInEx.Unity.Mono.Preloader.dll"))) return 6;
+        if (File.Exists(Path.Combine(core, "BepInEx.dll"))) return 5;
+        if (File.Exists(Path.Combine(core, "BepInEx.Core.dll"))) return 6;
+        return 0;
+    }
+
+    /// <summary>BepInEx 6 for Mono games: what the app installs.</summary>
+    public static BepInExPlan Plan6(GameInstall game)
+    {
+        var arch = game.Is64Bit ? "x64" : "x86";
+        return new BepInExPlan(Bep6Version,
+            new Uri($"https://github.com/BepInEx/BepInEx/releases/download/v{Bep6Version}/BepInEx-Unity.Mono-win-{arch}-{Bep6Version}.zip"), 0, arch, game.Root);
+    }
+
     public static BepInExStatus Check(GameInstall game)
     {
-        var core = Path.Combine(game.BepInExDir, "core", "BepInEx.dll");
+        var s = CheckRaw(game);
+        return s with { Major = s.State == BepInExState.NotInstalled ? 0 : MajorOf(game) };
+    }
+
+    private static BepInExStatus CheckRaw(GameInstall game)
+    {
+        var major = MajorOf(game);
+        var core = Path.Combine(game.BepInExDir, "core", major == 6 ? "BepInEx.Core.dll" : "BepInEx.dll");
         var proxy = Path.Combine(game.Root, "winhttp.dll");
         var hasCore = File.Exists(core);
         var hasProxy = File.Exists(proxy);
@@ -47,8 +80,11 @@ public static class BepInExManager
         return new(BepInExState.Ready, version, L.T("BepInEx is installed and ready."));
     }
 
-    /// <summary>Works out which BepInEx 5 build to download. Nothing is written to disk.</summary>
-    public static async Task<BepInExPlan> PlanAsync(HttpClient http, GameInstall game, CancellationToken ct)
+    /// <summary>What a new install gets: BepInEx 6 (with BepInEx 5 support). Nothing is written to disk.</summary>
+    public static Task<BepInExPlan> PlanAsync(HttpClient http, GameInstall game, CancellationToken ct) => Task.FromResult(Plan6(game));
+
+    /// <summary>Works out which BepInEx 5 build to download (for switching back). Nothing is written to disk.</summary>
+    public static async Task<BepInExPlan> Plan5Async(HttpClient http, GameInstall game, CancellationToken ct)
     {
         var arch = game.Is64Bit ? "x64" : "x86";
         return await LatestAsync(http, game, ct) ?? new BepInExPlan(PinnedVersion,
@@ -92,6 +128,7 @@ public static class BepInExManager
     {
         var s = Check(game);
         if (s.State is not (BepInExState.Ready or BepInExState.NeedsFirstRun or BepInExState.Disabled) || s.Version == null) return null;
+        if (s.Major != 5) return null; // BepInEx 6 is pinned to a tested build; it's never "updated" to BepInEx 5
         if (!Version.TryParse(s.Version, out var have)) return null;
         var latest = await LatestAsync(http, game, ct);
         if (latest == null || !Version.TryParse(latest.Version, out var newest)) return null;
@@ -107,6 +144,7 @@ public static class BepInExManager
     public static async Task<List<string>> UpdateAsync(HttpClient http, GameInstall game, BepInExPlan plan, IProgress<double>? progress, CancellationToken ct)
     {
         if (game.IsRunning()) throw new InvalidOperationException(L.T("Close Nomad Drive before installing BepInEx."));
+        if (MajorOf(game) == 6) throw new InvalidOperationException(L.T("BepInEx 6 is installed. Use Check BepInEx to switch back to BepInEx 5."));
         var old = Check(game).Version ?? "old";
         var backup = Path.Combine(AppPaths.Backups, "bepinex-" + old);
         void Copy(string from, string to)
@@ -149,7 +187,7 @@ public static class BepInExManager
         {
             // Sanity check: this must really be a BepInEx pack.
             var keys = archive.Entries.Where(e => !e.IsDirectory).Select(e => ModInstaller.Norm(e.Key ?? "")).ToList();
-            if (!keys.Any(k => k.EndsWith("BepInEx/core/BepInEx.dll", StringComparison.OrdinalIgnoreCase)))
+            if (!keys.Any(k => k.EndsWith("BepInEx/core/BepInEx.dll", StringComparison.OrdinalIgnoreCase) || k.EndsWith("BepInEx/core/BepInEx.Core.dll", StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException(L.T("The downloaded file doesn't look like BepInEx. Nothing was installed."));
 
             foreach (var e in archive.Entries.Where(e => !e.IsDirectory))
@@ -167,6 +205,9 @@ public static class BepInExManager
         Directory.CreateDirectory(game.PluginsDir);
         // Nomad Drive's mscorlib is stripped: without the full Mono libraries BepInEx's preloader crashes.
         if (BepInExChecker.EnsureNomadSetup(game)) written.Add(BepInExChecker.DotNetFixFolder + "/");
+        // BepInEx 6 can't load BepInEx 5 mods by itself: add the compatibility layer. Back on BepInEx 5 it isn't needed.
+        if (MajorOf(game) == 6) written.AddRange(BepInExCompat.Install(game));
+        else BepInExCompat.Remove(game);
         return written;
     }
 

@@ -14,6 +14,8 @@ public enum CheckFix
     InstallBepInEx,     // download and install BepInEx 5
     RepairBepInEx,      // reinstall BepInEx 5's core files (plugins and settings kept)
     UpdateBepInEx,
+    UpgradeToBepInEx6,  // BepInEx 5 is installed: move to BepInEx 6 + BepInEx 5 support (plugins and settings kept)
+    InstallCompat,      // BepInEx 6 without the BepInEx 5 compatibility layer (or an older copy of it)
     WriteDoorstop,      // write a working doorstop_config.ini
     EnableDoorstop,
     InstallDotNetFix,   // Nomad Drive's full .NET libraries + point doorstop at them
@@ -25,6 +27,7 @@ public enum CheckFix
     FlattenNested,      // plugins/Mod/BepInEx/plugins/* → plugins/Mod/*
     ClearOldCrashLogs,
     OpenProblems,       // UI only
+    OpenInstalled,      // UI only
     Play,               // UI only
 }
 
@@ -38,7 +41,7 @@ public sealed class CheckItem
     public List<string> Paths { get; init; } = new();
 
     /// <summary>Fixes that change files and can be run together by "Fix all".</summary>
-    public bool FileFix => Fix is not (CheckFix.None or CheckFix.OpenProblems or CheckFix.Play);
+    public bool FileFix => Fix is not (CheckFix.None or CheckFix.OpenProblems or CheckFix.OpenInstalled or CheckFix.Play);
 }
 
 /// <summary>
@@ -58,10 +61,14 @@ public static class BepInExChecker
 
     public const string DotNetFixFolder = "DotNetFix";
 
-    private static readonly string[] CoreFiles =
+    private static readonly string[] CoreFiles5 =
         { "BepInEx.dll", "BepInEx.Preloader.dll", "0Harmony.dll", "HarmonyXInterop.dll", "Mono.Cecil.dll", "MonoMod.RuntimeDetour.dll", "MonoMod.Utils.dll" };
-    private static readonly string[] WrongBuildMarkers =
-        { "BepInEx.Core.dll", "BepInEx.Unity.Mono.dll", "BepInEx.Unity.IL2CPP.dll", "BepInEx.IL2CPP.dll", "Il2CppInterop.Runtime.dll" };
+    private static readonly string[] CoreFiles6 =
+        { "BepInEx.Core.dll", "BepInEx.Preloader.Core.dll", "BepInEx.Unity.Mono.dll", "BepInEx.Unity.Mono.Preloader.dll", "BepInEx.Unity.Common.dll", "0Harmony.dll", "Mono.Cecil.dll", "MonoMod.RuntimeDetour.dll", "MonoMod.Utils.dll", "SemanticVersioning.dll" };
+    /// <summary>BepInEx builds for IL2CPP games, which can't run on Nomad Drive (a Mono game).</summary>
+    private static readonly string[] WrongBuildMarkers = { "BepInEx.Unity.IL2CPP.dll", "BepInEx.IL2CPP.dll", "Il2CppInterop.Runtime.dll" };
+
+    public static string PreloaderFor(int major) => major == 6 ? @"BepInEx\core\BepInEx.Unity.Mono.Preloader.dll" : @"BepInEx\core\BepInEx.Preloader.dll";
     private static readonly string[] MelonLoaderBits = { "MelonLoader", "Mods", "Plugins", "UserData", "UserLibs" };
     private static readonly string[] OtherProxies = { "version.dll", "winmm.dll", "dinput8.dll" };
 
@@ -89,27 +96,41 @@ public static class BepInExChecker
         }
 
         var core = Path.Combine(game.BepInExDir, "core");
-        var hasCore = File.Exists(Path.Combine(core, "BepInEx.dll"));
+        var major = status.Major;
+        var coreFiles = major == 6 ? CoreFiles6 : CoreFiles5;
+        var hasCore = File.Exists(Path.Combine(core, coreFiles[0]));
         var proxy = Path.Combine(game.Root, "winhttp.dll");
         if (status.State == BepInExState.NotInstalled)
         {
-            Add(AreaInstall, CheckLevel.Error, L.T("BepInEx isn't installed."), L.T("Nomad Drive mods need BepInEx 5. The fix downloads it from BepInEx's GitHub and sets it up for Nomad Drive."), CheckFix.InstallBepInEx);
+            Add(AreaInstall, CheckLevel.Error, L.T("BepInEx isn't installed."), L.T("Nomad Drive mods need BepInEx. The fix downloads BepInEx 6 from BepInEx's GitHub and sets it up for Nomad Drive, with support for BepInEx 5 mods."), CheckFix.InstallBepInEx);
         }
         else
         {
             var wrong = WrongBuildMarkers.Where(f => File.Exists(Path.Combine(core, f))).ToList();
             if (wrong.Count > 0)
-                Add(AreaInstall, CheckLevel.Error, L.T("The wrong BepInEx is installed (BepInEx 6 or an IL2CPP build)."),
-                    L.T("Nomad Drive needs BepInEx 5 for Mono games. Found: ") + string.Join(", ", wrong), CheckFix.RepairBepInEx);
-            else if (status.Version is { } v && Version.TryParse(v, out var ver) && ver.Major != 5)
-                Add(AreaInstall, CheckLevel.Error, L.F("BepInEx {0} is installed, but Nomad Drive mods need BepInEx 5.", v), "", CheckFix.RepairBepInEx);
-            else if (status.Version != null && latestBepInEx != null && Version.TryParse(status.Version, out var have) && Version.TryParse(latestBepInEx, out var latest) && latest > have)
-                Add(AreaInstall, CheckLevel.Info, L.F("BepInEx {0} is installed. {1} is available.", status.Version, latestBepInEx), L.T("Your plugins and settings are kept when it updates."), CheckFix.UpdateBepInEx);
+                Add(AreaInstall, CheckLevel.Error, L.T("A BepInEx made for IL2CPP games is installed."),
+                    L.T("Nomad Drive is a Mono game, so IL2CPP builds can't run on it. The fix installs BepInEx 6 for Mono. Found: ") + string.Join(", ", wrong), CheckFix.RepairBepInEx);
+            else if (major == 6)
+            {
+                Add(AreaInstall, CheckLevel.Ok, L.F("BepInEx {0} is installed.", status.Version ?? "6"));
+                var built5 = ModLoadDoctor.ModsBuiltFor(game, "5");
+                if (!BepInExCompat.IsInstalled(game))
+                    Add(AreaInstall, built5.Count > 0 ? CheckLevel.Error : CheckLevel.Warning, L.T("BepInEx 5 support isn't installed."),
+                        (built5.Count > 0 ? L.F("{0} of your mods are built for BepInEx 5 and can't load without it:\n", built5.Count) + string.Join("\n", built5.Take(12).Select(m => "• " + m)) + "\n\n" : "") +
+                        L.T("BepInEx 6 can't load BepInEx 5 mods by itself. The BepInEx 5 compatibility layer runs them beside BepInEx 6, and most Nomad Drive mods are still built for BepInEx 5."),
+                        CheckFix.InstallCompat);
+                else if (BepInExCompat.IsOutdated(game))
+                    Add(AreaInstall, CheckLevel.Info, L.T("A newer BepInEx 5 support layer is available."), L.F("You have {0}; this app has {1}.", BepInExCompat.Installed(game), BepInExCompat.Bundled()), CheckFix.InstallCompat);
+                else
+                    Add(AreaInstall, CheckLevel.Ok, built5.Count > 0 ? L.F("BepInEx 5 support is installed ({0} BepInEx 5 mod(s)).", built5.Count) : L.T("BepInEx 5 support is installed."));
+            }
             else
-                Add(AreaInstall, CheckLevel.Ok, L.F("BepInEx {0} is installed.", status.Version ?? "5"));
+                Add(AreaInstall, CheckLevel.Warning, L.F("BepInEx {0} is installed. This app now uses BepInEx 6.", status.Version ?? "5"),
+                    L.T("Upgrading installs BepInEx 6 with BepInEx 5 support, so your current mods keep working and mods built for BepInEx 6 load too. Your plugins and settings are kept, the old BepInEx goes to a backup, and you can switch back in Check BepInEx."),
+                    CheckFix.UpgradeToBepInEx6);
 
-            var missing = CoreFiles.Where(f => !File.Exists(Path.Combine(core, f))).ToList();
-            var empty = CoreFiles.Where(f => File.Exists(Path.Combine(core, f)) && new FileInfo(Path.Combine(core, f)).Length == 0).ToList();
+            var missing = coreFiles.Where(f => !File.Exists(Path.Combine(core, f))).ToList();
+            var empty = coreFiles.Where(f => File.Exists(Path.Combine(core, f)) && new FileInfo(Path.Combine(core, f)).Length == 0).ToList();
             if (missing.Count > 0 || empty.Count > 0)
                 Add(AreaInstall, CheckLevel.Error, L.T("Some of BepInEx's own files are missing or empty."),
                     L.T("Antivirus programs sometimes remove them. Missing: ") + string.Join(", ", missing.Concat(empty)), CheckFix.RepairBepInEx);
@@ -207,6 +228,20 @@ public static class BepInExChecker
                         L.F("{0} mod problem(s) in the last session.", errors.Count),
                         string.Join("\n", errors.Take(6).Select(p => "• " + (p.ModName ?? p.Plugin ?? L.T("Game")) + ": " + p.Title)), CheckFix.OpenProblems);
 
+                // Which installed mods didn't start, and why (the Installed tab has the details and fixes).
+                try
+                {
+                    var ctx = ModLoadDoctor.Gather(game, manifest);
+                    var entries = manifest.Mods.Where(m => m.Id != "bepinex").Select(m => (Name: m.Name, Files: (IEnumerable<string>)m.Files, Off: m.Disabled))
+                        .Concat(ModInstaller.FindUntracked(game, manifest).Where(u => !u.Rel.EndsWith("/" + BepInExCompat.PluginFolder, StringComparison.OrdinalIgnoreCase))
+                            .Select(u => (Name: Path.GetFileNameWithoutExtension(u.Rel), Files: (IEnumerable<string>)new[] { u.Rel }, Off: u.Disabled)));
+                    var notStarted = entries.Select(e => (e.Name, D: ModLoadDoctor.Diagnose(ctx, e.Files, e.Off))).Where(x => x.D.State == LoadState.DidntStart).ToList();
+                    if (notStarted.Count > 0)
+                        Add(AreaMods, CheckLevel.Error, L.F("{0} installed mod(s) didn't start.", notStarted.Count),
+                            string.Join("\n", notStarted.Select(x => "• " + x.Name + ": " + x.D.Short)) + "\n\n" + L.T("The Installed tab shows why for each one, with a fix."), CheckFix.OpenInstalled);
+                }
+                catch { }
+
                 var gameDll = Path.Combine(game.DataFolder, "Managed", "Assembly-CSharp.dll");
                 if (report.LogTime is { } lt && File.Exists(gameDll) && File.GetLastWriteTime(gameDll) > lt)
                     Add(AreaMods, CheckLevel.Info, L.T("Nomad Drive has updated since mods last ran."), L.T("Some mods break after game updates. Play once, then check again."), CheckFix.Play);
@@ -286,6 +321,11 @@ public static class BepInExChecker
             case CheckFix.EnableDoorstop:
                 File.WriteAllText(DoorstopIni(game), Regex.Replace(SafeRead(DoorstopIni(game)), @"(?im)^(\s*enabled\s*=\s*)false", "${1}true"));
                 return L.T("Switched BepInEx back on.");
+            case CheckFix.InstallCompat:
+            {
+                var w = BepInExCompat.Install(game);
+                return L.F("Installed BepInEx 5 support ({0} files).", w.Count);
+            }
             case CheckFix.InstallDotNetFix:
                 InstallDotNetFix(game);
                 ClearCrashLogs(game, item.Paths);
@@ -365,8 +405,15 @@ public static class BepInExChecker
         var ini = DoorstopIni(game);
         if (!File.Exists(ini)) { WriteDoorstop(game); return; }
         var text = SafeRead(ini);
+        var current = (IniValue(text, "dll_search_path_override") ?? "").Trim().Trim('"');
         if (Regex.IsMatch(text, @"(?im)^\s*dll_search_path_override\s*="))
-            text = Regex.Replace(text, @"(?im)^(\s*dll_search_path_override\s*=).*$", "${1} " + DotNetFixFolder);
+        {
+            // Keep whatever else is there (BepInEx 6 puts BepInEx\core here); the full libraries go first.
+            var paths = current.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(p => !p.Equals(DotNetFixFolder, StringComparison.OrdinalIgnoreCase)).Prepend(DotNetFixFolder);
+            var value = string.Join(";", paths);
+            text = Regex.Replace(text, @"(?im)^(\s*dll_search_path_override\s*=).*$", "${1} " + (value.Contains(';') ? "\"" + value + "\"" : value));
+        }
         else if (Regex.IsMatch(text, @"(?im)^\[UnityMono\]"))
             text = Regex.Replace(text, @"(?im)^\[UnityMono\]\s*$", "[UnityMono]\r\n\r\n# Nomad Drive's mscorlib is stripped: use the full Mono libraries\r\ndll_search_path_override = " + DotNetFixFolder, RegexOptions.None, TimeSpan.FromSeconds(1));
         else
@@ -378,9 +425,11 @@ public static class BepInExChecker
     public static void WriteDoorstop(GameInstall game)
     {
         var needsFix = CorlibIsStripped(GameCorlib(game)) == true;
-        var text = "# Written by Nomad Mod Downloader\r\n[General]\r\n\r\n# Enable Doorstop?\r\nenabled = true\r\n\r\n# Path to the assembly to load and execute\r\ntarget_assembly=BepInEx\\core\\BepInEx.Preloader.dll\r\n\r\n" +
+        var major = BepInExManager.MajorOf(game);
+        var search = major == 6 ? (needsFix ? "\"" + DotNetFixFolder + ";BepInEx\\core\"" : "\"BepInEx\\core\"") : needsFix ? DotNetFixFolder : "";
+        var text = "# Written by Nomad Mod Downloader\r\n[General]\r\n\r\n# Enable Doorstop?\r\nenabled = true\r\n\r\n# Path to the assembly to load and execute\r\ntarget_assembly = " + PreloaderFor(major) + "\r\n\r\n" +
                    "redirect_output_log = false\r\n\r\nboot_config_override =\r\n\r\nignore_disable_switch = false\r\n\r\n[UnityMono]\r\n\r\n" +
-                   (needsFix ? "# Nomad Drive's mscorlib is stripped: use the full Mono libraries\r\ndll_search_path_override = " + DotNetFixFolder : "dll_search_path_override =") +
+                   (needsFix ? "# Nomad Drive's mscorlib is stripped: use the full Mono libraries\r\n" : "") + "dll_search_path_override = " + search +
                    "\r\n\r\ndebug_enabled = false\r\n\r\ndebug_address = 127.0.0.1:10000\r\n\r\ndebug_suspend = false\r\n";
         File.WriteAllText(DoorstopIni(game), text);
         if (needsFix && DotNetFixDir(game) == null) InstallDotNetFix(game);
@@ -415,8 +464,10 @@ public static class BepInExChecker
     {
         var v = IniValue(SafeRead(DoorstopIni(game)), "dll_search_path_override") ?? IniValue(SafeRead(DoorstopIni(game)), "dllSearchPathOverride");
         if (string.IsNullOrWhiteSpace(v)) return null;
-        var dir = Path.IsPathRooted(NormPath(v)) ? NormPath(v) : Path.Combine(game.Root, NormPath(v));
-        return Directory.Exists(dir) ? dir : null;
+        var dirs = v.Trim().Trim('"').Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormPath).Select(p => Path.IsPathRooted(p) ? p : Path.Combine(game.Root, p)).Where(Directory.Exists).ToList();
+        return dirs.FirstOrDefault(d => File.Exists(Path.Combine(d, "mscorlib.dll")))
+            ?? dirs.FirstOrDefault(d => Path.GetFileName(d).Equals(DotNetFixFolder, StringComparison.OrdinalIgnoreCase));
     }
 
     private static IEnumerable<string> BlockedFiles(GameInstall game)

@@ -471,10 +471,11 @@ internal sealed partial class MainForm : Form
         _installedList = Theme.List();
         _installedList.Columns.Add(L.T("Mod"), 260);
         _installedList.Columns.Add(L.T("Version"), 90);
-        _installedList.Columns.Add(L.T("Status"), 190);
-        _installedList.Columns.Add(L.T("Installed to"), 300);
+        _installedList.Columns.Add(L.T("Status"), 160);
+        _installedList.Columns.Add(L.T("Last game start"), 210);
+        _installedList.Columns.Add(L.T("Installed to"), 260);
         _installedList.Columns.Add(L.T("Installed"), 110).Tag = "optional";
-        _installedList.SelectedIndexChanged += (_, _) => UpdateInstalledButtons();
+        _installedList.SelectedIndexChanged += (_, _) => { UpdateInstalledButtons(); ShowLoadDetail(); };
 
         var hint = new Label
         {
@@ -483,6 +484,8 @@ internal sealed partial class MainForm : Form
             Text = L.T("Disabling renames a mod's DLLs to .dll.disabled so BepInEx skips them. Uninstalling puts back any files the mod replaced. Grey rows were added outside this app.")
         };
         page.Controls.Add(_installedList);
+        page.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 10, BackColor = Color.Transparent });
+        page.Controls.Add(BuildLoadPanel());
         page.Controls.Add(hint);
         page.Controls.Add(toolbar);
         UpdateInstalledButtons();
@@ -1253,15 +1256,13 @@ internal sealed partial class MainForm : Form
         // Not installed or broken: show exactly what will happen and wait for a yes.
         if (game.IsRunning()) { MessageBox.Show(this, L.T("Close Nomad Drive first, then try again."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information); return false; }
 
-        SetStatus(L.T("Finding the latest BepInEx 5…"));
         var plan = await BepInExManager.PlanAsync(_http, game, _closing.Token);
-        SetStatus("");
 
         var why = s.State == BepInExState.Broken ? L.F("BepInEx looks broken: {0}", s.Message) : L.T("Nomad Drive mods need BepInEx, and it isn't installed yet.");
         var text = L.F("{0}\n\nInstall BepInEx {1} ({2}) now?\n\n", why, plan.Version, plan.Architecture) +
                    L.F("From:  {0}", plan.Url.Host + plan.Url.AbsolutePath) + (plan.SizeBytes > 0 ? $"  ({Fmt.Size(plan.SizeBytes)})" : "") + "\n" +
                    L.F("Into:  {0}\n\n", game.Root) +
-                   L.T("It adds winhttp.dll, doorstop_config.ini, .doorstop_version, changelog.txt and the BepInEx folder. Nothing outside the game folder is touched.\n\n") +
+                   L.T("It adds winhttp.dll, doorstop_config.ini, .doorstop_version, changelog.txt and the BepInEx folder, plus support for mods built for BepInEx 5. Nothing outside the game folder is touched.\n\n") +
                    L.T("Afterwards, launch the game once so BepInEx finishes setting up.");
         if (MessageBox.Show(this, text, L.T("Install BepInEx?"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
         {
@@ -1287,6 +1288,7 @@ internal sealed partial class MainForm : Form
         if (_installedList == null) return;
         _manifest = Manifest.Load();
         if (_game != null && ModInstaller.Reconcile(_manifest, _game)) _manifest.Save();
+        PrepareLoadChecks();
         _installedList.BeginUpdate();
         _installedList.Items.Clear();
 
@@ -1299,6 +1301,7 @@ internal sealed partial class MainForm : Form
             item.SubItems.Add(m.Version);
             var st = item.SubItems.Add(status);
             st.ForeColor = m.Update != null ? Theme.Accent : m.Disabled ? Theme.Warn : Theme.Good;
+            AddLoadCell(item, m.Files, m.Disabled);
             item.SubItems.Add(m.Location);
             item.SubItems.Add(Fmt.Date(m.InstalledAt));
             var author = m.Author.Length > 0 ? m.Author
@@ -1309,11 +1312,13 @@ internal sealed partial class MainForm : Form
         {
             foreach (var (rel, disabled) in ModInstaller.FindUntracked(_game, _manifest))
             {
+                if (rel.EndsWith("/" + BepInExCompat.PluginFolder, StringComparison.OrdinalIgnoreCase)) continue; // part of BepInEx, not a mod
                 var folderName = Path.GetFileName(rel);
                 var item = new ListViewItem(folderName) { Tag = new Untracked(rel, disabled), ForeColor = Theme.Muted };
                 item.SubItems.Add("");
                 var st = item.SubItems.Add(disabled ? L.T("Disabled (not from this app)") : L.T("Not from this app"));
                 st.ForeColor = disabled ? Theme.Warn : Theme.Muted;
+                AddLoadCell(item, new[] { rel }, disabled);
                 item.SubItems.Add(rel.Replace('/', '\\'));
                 item.SubItems.Add("");
                 // Match by folder name, or by the plugin names inside it (e.g. folder "NomadHUD" holds "Retro RV HUD").
@@ -1333,6 +1338,9 @@ internal sealed partial class MainForm : Form
         }
         _installedList.EndUpdate();
         UpdateInstalledButtons();
+        ShowLoadDetail();
+        var notStarted = _loadDiag.Values.Count(d => d.State == LoadState.DidntStart);
+        SetBadge("Installed", notStarted > 0 ? L.F("{0} not starting", notStarted) : _badges.TryGetValue("Installed", out var b) && b.Contains("update") ? b : null);
         _ = FillAuthorsAsync();
     }
 
