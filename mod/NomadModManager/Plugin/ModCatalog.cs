@@ -166,12 +166,14 @@ namespace NomadModManager
 
                 MatchDownloader(m);
                 if (m.NexusId == 0 && _byName.TryGetValue(NameKey(m.Name), out var byName)) m.NexusId = byName;
+                if (m.IsSelf && m.NexusId == 0) m.NexusId = Nexus.DownloaderModId; // this menu ships on Nomad Mod Downloader's page
                 if (m.NexusId > 0 && _nexus.TryGetValue(m.NexusId, out var nx))
                 {
                     m.NexusVersion = nx.Version;
                     if (nx.Author.Length > 0) m.Author = nx.Author;
                     m.Summary = nx.Summary;
-                    m.UpdateAvailable = IsNewer(nx.Version, m.Version);
+                    // The page's version is the downloader's, not this menu's: the downloader checks this menu's file itself.
+                    m.UpdateAvailable = !m.IsSelf && IsNewer(nx.Version, m.Version);
                 }
                 m.Category = m.IsSelf ? "Tools & Frameworks"
                     : m.NexusId > 0 && _nexus.TryGetValue(m.NexusId, out var nn) && nn.Name.Length > 0 ? Categories.Classify(nn.Name, nn.Summary)

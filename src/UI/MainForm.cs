@@ -372,10 +372,14 @@ internal sealed partial class MainForm : Form
         fileLabel.Margin = new Padding(0, 12, 0, 4);
         _files = Theme.Combo(W);
         _files.Margin = new Padding(0, 0, 0, 4);
-        _files.SelectedIndexChanged += (_, _) => _fileInfo.Text = (_files.SelectedItem as ModFileInfo) is { } f
-            ? L.F("Uploaded {0}", Fmt.Date(f.Date.ToLocalTime())) + (string.IsNullOrWhiteSpace(f.Description) ? "" : " — " + System.Net.WebUtility.HtmlDecode(StripTags(f.Description)))
-              + (f.Changelog.Count > 0 ? "\n" + Changelog(f) : "")
-            : "";
+        _files.SelectedIndexChanged += (_, _) =>
+        {
+            _fileInfo.Text = (_files.SelectedItem as ModFileInfo) is { } f
+                ? L.F("Uploaded {0}", Fmt.Date(f.Date.ToLocalTime())) + (string.IsNullOrWhiteSpace(f.Description) ? "" : " — " + System.Net.WebUtility.HtmlDecode(StripTags(f.Description)))
+                  + (f.Changelog.Count > 0 ? "\n" + Changelog(f) : "")
+                : "";
+            if (_selectedMod?.ModId == SelfModId) ShowSelfPageState();
+        };
         _fileInfo = new Label { ForeColor = Theme.Muted, AutoSize = true, MaximumSize = new Size(W, 160), Margin = new Padding(0, 0, 0, 14), Font = Theme.Small, BackColor = Color.Transparent };
         var actions = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, WrapContents = false };
         _installButton = Theme.Button(L.T("Install"), true);
@@ -814,6 +818,7 @@ internal sealed partial class MainForm : Form
         if (RequireGame() == null) return;
         SetStatus(L.T("Getting mod details…"));
         var files = await _api.GetModFilesAsync(modId, _closing.Token);
+        if (modId == SelfModId) files = files.Where(IsInGameMenuFile).ToList(); // from the game, only the in-game menu's file makes sense
         var file = files.FirstOrDefault(f => f.IsCurrent && f.Primary) ?? files.FirstOrDefault(f => f.IsCurrent) ?? files.FirstOrDefault();
         if (file == null) { SetStatus(L.T("That mod has no files to download.")); return; }
         Log(L.F("The game asked to install mod {0}.", modId));
@@ -910,13 +915,7 @@ internal sealed partial class MainForm : Form
             PopulateFiles();
             var already = _manifest.Mods.FirstOrDefault(m => m.ModId == mod.ModId);
             _installButton.Text = already != null ? L.T("Reinstall") : L.T("Install");
-            if (mod.ModId == SelfModId)
-            {
-                // You're running it: no install, just say which version you have.
-                _installButton.Text = "✓ " + L.F("Installed (v{0})", Updater.Current.ToString(3));
-                _installButton.Enabled = false;
-                _fileInfo.Text = L.T("This is the app you're using. It updates itself when a new version comes out.");
-            }
+            if (mod.ModId == SelfModId) ShowSelfPageState();
         }
         catch (Exception ex) { _fileInfo.Text = L.T("Couldn't load files: ") + ex.Message; }
     }
@@ -967,7 +966,32 @@ internal sealed partial class MainForm : Form
         var idx = keep == null ? -1 : _files.Items.Cast<ModFileInfo>().ToList().FindIndex(f => f.FileId == keep);
         if (_files.Items.Count > 0) _files.SelectedIndex = idx >= 0 ? idx : 0;
         else _fileInfo.Text = L.T("This mod has no downloadable files.");
-        _installButton.Enabled = _files.Items.Count > 0 && _selectedMod?.ModId != SelfModId;
+        _installButton.Enabled = _files.Items.Count > 0 && (_selectedMod?.ModId != SelfModId || IsInGameMenuFile(_files.SelectedItem as ModFileInfo));
+    }
+
+    /// <summary>
+    /// This app's own Nexus page also holds the in-game Mods menu (Nomad Mod Manager). The app's file can't be
+    /// installed from here (it updates itself), but the in-game menu's file installs like any mod.
+    /// </summary>
+    private static bool IsInGameMenuFile(ModFileInfo? f) =>
+        f != null && (f.Name.Contains("in-game", StringComparison.OrdinalIgnoreCase) || f.Name.Contains("in game", StringComparison.OrdinalIgnoreCase)
+                      || f.Name.Contains("Mod Manager", StringComparison.OrdinalIgnoreCase) || f.Name.Contains("Mods menu", StringComparison.OrdinalIgnoreCase));
+
+    private void ShowSelfPageState()
+    {
+        var f = _files.SelectedItem as ModFileInfo;
+        if (IsInGameMenuFile(f))
+        {
+            var have = _manifest.Mods.FirstOrDefault(m => m.ModId == SelfModId && m.FileId == f!.FileId);
+            _installButton.Text = have != null ? L.T("Reinstall") : L.T("Install");
+            _installButton.Enabled = true;
+            if (_fileInfo.Text.Length == 0) _fileInfo.Text = L.T("The in-game Mods menu: adds a Mods button to Nomad Drive's main menu.");
+            return;
+        }
+        // The app itself: no install, just say which version you have.
+        _installButton.Text = "✓ " + L.F("Installed (v{0})", Updater.Current.ToString(3));
+        _installButton.Enabled = false;
+        _fileInfo.Text = L.T("This is the app you're using. It updates itself when a new version comes out.");
     }
 
     /// <summary>
@@ -1026,7 +1050,8 @@ internal sealed partial class MainForm : Form
 
     private async Task InstallSelectedAsync()
     {
-        if (_selectedMod == null || _selectedMod.ModId == SelfModId || _files.SelectedItem is not ModFileInfo file) return;
+        if (_selectedMod == null || _files.SelectedItem is not ModFileInfo file) return;
+        if (_selectedMod.ModId == SelfModId && !IsInGameMenuFile(file)) return; // the app updates itself
         var mod = _selectedMod;
         await RunExclusive(() => InstallFromNexusAsync(mod.ModId, file.FileId));
     }

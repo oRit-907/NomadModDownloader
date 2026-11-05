@@ -141,7 +141,7 @@ internal sealed partial class MainForm
         while (_queue.Count > 0)
         {
             var (modId, fileId, name) = _queue.Dequeue();
-            if (modId == SelfModId) continue; // the app itself: it updates on its own
+            if (modId == SelfModId && (fileId is null or 0)) continue; // the app itself: it updates on its own
             var fid = fileId;
             if (fid is null or 0)
             {

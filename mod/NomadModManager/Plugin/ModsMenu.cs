@@ -432,7 +432,7 @@ namespace NomadModManager
             if (entry != null && entry.UpdateAvailable && !entry.UpdateStaged)
             { if (Btn(new Rect(x, by, 112 * _s, 40 * _s), "Update", true)) InstallFromNexus(m.Id); }
             else if (_cat.IsInstalled(m.Id)) StatusText(new Rect(x, by, 112 * _s, 40 * _s), "Installed", CGood);
-            else if (m.Id == Nexus.DownloaderModId) StatusText(new Rect(x, by, 112 * _s, 40 * _s), "Desktop app", CMuted);
+            else if (m.Id == Nexus.DownloaderModId) StatusText(new Rect(x, by, 112 * _s, 40 * _s), "Installed", CGood); // the app and this menu
             else if (Btn(new Rect(x, by, 112 * _s, 40 * _s), "Install", true)) InstallFromNexus(m.Id);
             if (Btn(new Rect(x + 120 * _s, by, 92 * _s, 40 * _s), "Page", false)) Application.OpenURL(m.PageUrl);
         }
