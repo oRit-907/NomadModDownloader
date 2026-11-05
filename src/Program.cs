@@ -3,6 +3,18 @@ using NomadModDownloader.Core;
 
 namespace NomadModDownloader;
 
+/// <summary>Requests from the in-game Mods menu (Nomad Mod Manager), passed like Nexus links.</summary>
+internal static class GameLink
+{
+    public const string Prefix = "nomadmods://install/";
+
+    public static bool TryParse(string? line, out int modId)
+    {
+        modId = 0;
+        return line != null && line.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase) && int.TryParse(line[Prefix.Length..].Trim('/', ' '), out modId) && modId > 0;
+    }
+}
+
 internal static class Program
 {
     private const string MutexName = @"Local\NomadModDownloader.SingleInstance";
@@ -13,6 +25,10 @@ internal static class Program
     {
         L.Init(AppSettings.Load().Language);
         var link = NxmLink.FindInArgs(args);
+        // From the in-game Mods menu: "--game-install <modId>"
+        var gi = Array.FindIndex(args, a => a.Equals("--game-install", StringComparison.OrdinalIgnoreCase));
+        if (link == null && gi >= 0 && gi + 1 < args.Length && int.TryParse(args[gi + 1], out var gameModId) && gameModId > 0)
+            link = GameLink.Prefix + gameModId;
 
         // Links for other games go straight back to the previous mod manager (Vortex/MO2) without opening this app.
         if (link != null && NxmLink.TryParse(link, out var parsed) && parsed is { IsNomadDrive: false })

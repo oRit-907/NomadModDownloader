@@ -585,6 +585,7 @@ internal sealed partial class MainForm : Form
             return;
         }
         _gameLabel.Text = _game.LooksLikeNomadDrive ? _game.Root : _game.Root + "   " + L.T("(this doesn't look like Nomad Drive)");
+        if (_game.LooksLikeNomadDrive) _game.RegisterWithModManager();
         _gameLabel.ForeColor = _game.LooksLikeNomadDrive ? Theme.Text : Theme.Warn;
 
         var s = BepInExManager.Check(_game);
@@ -787,6 +788,11 @@ internal sealed partial class MainForm : Form
     {
         if (switchPage) BringToFront2();
         if (line == "show") return;
+        if (GameLink.TryParse(line, out var gameModId))
+        {
+            await RunExclusive(() => InstallLatestFromGameAsync(gameModId));
+            return;
+        }
         if (!NxmLink.TryParse(line, out var link) || link == null) { Log(L.T("Ignored an unrecognised link.")); return; }
         if (!link.IsNomadDrive)
         {
@@ -797,6 +803,18 @@ internal sealed partial class MainForm : Form
         ShowPage("Nexus");
         _browser.ShowNotice(L.T("\"Mod Manager Download\" isn't used by this app — click \"Manual download\" instead (then \"Slow download\"). It installs automatically."), Theme.Warn);
         await Task.CompletedTask;
+    }
+
+    /// <summary>"Install" / "Update" pressed in the game's Mods menu: open the mod's main current file, ready to click.</summary>
+    private async Task InstallLatestFromGameAsync(int modId)
+    {
+        if (RequireGame() == null) return;
+        SetStatus(L.T("Getting mod details…"));
+        var files = await _api.GetModFilesAsync(modId, _closing.Token);
+        var file = files.FirstOrDefault(f => f.IsCurrent && f.Primary) ?? files.FirstOrDefault(f => f.IsCurrent) ?? files.FirstOrDefault();
+        if (file == null) { SetStatus(L.T("That mod has no files to download.")); return; }
+        Log(L.F("The game asked to install mod {0}.", modId));
+        await InstallFromNexusAsync(modId, file.FileId);
     }
 
     private async Task<bool> OpenInBuiltInBrowserAsync(string url)
@@ -1073,7 +1091,7 @@ internal sealed partial class MainForm : Form
     {
         var game = RequireGame();
         if (game == null) return;
-        if (game.IsRunning()) { MessageBox.Show(this, L.T("Nomad Drive is running. Close the game, then press Install again (the file is already downloaded)."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        if (game.BlocksInstall()) { MessageBox.Show(this, L.T("Nomad Drive is running. Close the game, then press Install again (the file is already downloaded)."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
 
         var ctx = NexusDownloadContext.From(pageUrl, Path.GetFileName(path));
         if (ctx.ModId == null)
@@ -1161,7 +1179,9 @@ internal sealed partial class MainForm : Form
 
         SetStatus(BepInExManager.Check(game).State == BepInExState.NeedsFirstRun
             ? L.F("Installed {0} v{1}. Launch the game once so BepInEx finishes setting up.", mod.Name, meta.Version)
-            : L.F("Installed {0} v{1}.", mod.Name, meta.Version), good: true);
+            : game.IsRunning()
+                ? L.F("Installed {0} v{1}. Check the Mods menu in the game: it starts there, or after a restart if it has to.", mod.Name, meta.Version)
+                : L.F("Installed {0} v{1}.", mod.Name, meta.Version), good: true);
     }
 
     /// <summary>Makes sure BepInEx is there, asking the user before anything is installed or changed.</summary>
@@ -1234,6 +1254,7 @@ internal sealed partial class MainForm : Form
     {
         if (_installedList == null) return;
         _manifest = Manifest.Load();
+        if (_game != null && ModInstaller.Reconcile(_manifest, _game)) _manifest.Save();
         _installedList.BeginUpdate();
         _installedList.Items.Clear();
         foreach (var m in _manifest.Mods.OrderBy(m => m.Name))

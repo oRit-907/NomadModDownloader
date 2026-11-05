@@ -220,7 +220,8 @@ public static class ModInstaller
     /// <summary>Copies the planned files into the game folder, backing up anything it replaces. Rolls back on failure.</summary>
     public static InstalledMod Install(InstallPlan plan, GameInstall game, Manifest manifest, InstalledMod meta, string? manifestPath = null, bool backupExisting = true)
     {
-        if (game.IsRunning()) throw new InvalidOperationException(L.T("Close Nomad Drive before installing mods."));
+        if (game.BlocksInstall()) throw new InvalidOperationException(L.T("Close Nomad Drive before installing mods."));
+        var live = game.IsRunning(); // with the in-game Mods menu: files in use are staged and swapped in at next launch
         if (plan.Map.Count == 0) throw new InvalidOperationException(L.T("Nothing in this download can be installed."));
 
         var backupRoot = Path.Combine(AppPaths.Backups, Fmt.SafeFileName(meta.Id.Replace(':', '_')));
@@ -252,7 +253,7 @@ public static class ModInstaller
             {
                 var single = dests[""];
                 Directory.CreateDirectory(Path.GetDirectoryName(single.Full)!);
-                File.Copy(plan.SourceFile, single.Full, true);
+                File.Copy(plan.SourceFile, Target(single.Full, live), true);
                 written.Add(single.Rel);
             }
             else
@@ -267,7 +268,7 @@ public static class ModInstaller
                         var e = reader.Entry;
                         if (e.IsDirectory || e.Key == null || !dests.TryGetValue(e.Key, out var d)) continue;
                         Directory.CreateDirectory(Path.GetDirectoryName(d.Full)!);
-                        using (var fs = File.Create(d.Full)) reader.WriteEntryTo(fs);
+                        using (var fs = File.Create(Target(d.Full, live))) reader.WriteEntryTo(fs);
                         written.Add(d.Rel);
                     }
                 }
@@ -278,7 +279,7 @@ public static class ModInstaller
                         if (e.IsDirectory || e.Key == null || !dests.TryGetValue(e.Key, out var d)) continue;
                         Directory.CreateDirectory(Path.GetDirectoryName(d.Full)!);
                         using (var src = e.OpenEntryStream())
-                        using (var fs = File.Create(d.Full)) src.CopyTo(fs);
+                        using (var fs = File.Create(Target(d.Full, live))) src.CopyTo(fs);
                         written.Add(d.Rel);
                     }
                 }
@@ -301,7 +302,7 @@ public static class ModInstaller
         catch
         {
             // Roll back: remove what we wrote, put back what we replaced.
-            foreach (var rel in written) TryDelete(SafeJoin(game.Root, rel));
+            foreach (var rel in written) { TryDelete(SafeJoin(game.Root, rel) + Pending.NewSuffix); if (!live) TryDelete(SafeJoin(game.Root, rel)); }
             foreach (var rel in backedUp)
             {
                 var bak = SafeJoin(backupRoot, rel);
@@ -312,13 +313,21 @@ public static class ModInstaller
         }
     }
 
+    /// <summary>
+    /// Where a file goes. While the game runs (with the in-game Mods menu), a file that already exists may be in use,
+    /// so the new copy is written next to it as *.nmm-new and swapped in when the game next starts.
+    /// </summary>
+    private static string Target(string full, bool live) =>
+        live && (File.Exists(full) || File.Exists(full + ".disabled")) ? full + Pending.NewSuffix : full;
+
     public static void Uninstall(InstalledMod mod, GameInstall game, Manifest manifest, string? manifestPath = null)
     {
-        if (game.IsRunning()) throw new InvalidOperationException(L.T("Close Nomad Drive before removing mods."));
+        if (game.BlocksInstall()) throw new InvalidOperationException(L.T("Close Nomad Drive before removing mods."));
+        var live = game.IsRunning();
         foreach (var rel in mod.Files)
         {
             var full = SafeJoin(game.Root, rel);
-            TryDelete(full);
+            if (!TryDelete(full) && live) Pending.Add(game.Root, "remove", rel); // in use: removed at next launch
             TryDelete(full + ".disabled");
         }
         var backupRoot = Path.Combine(AppPaths.Backups, Fmt.SafeFileName(mod.Id.Replace(':', '_')));
@@ -328,7 +337,7 @@ public static class ModInstaller
             if (!File.Exists(bak)) continue;
             var dest = SafeJoin(game.Root, rel);
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            File.Copy(bak, dest, true);
+            File.Copy(bak, live && File.Exists(dest) ? dest + Pending.NewSuffix : dest, true);
         }
         try { if (Directory.Exists(backupRoot)) Directory.Delete(backupRoot, true); } catch { }
         CleanEmptyDirs(game, mod.Files);
@@ -394,7 +403,32 @@ public static class ModInstaller
         }
     }
 
-    private static void TryDelete(string path) { try { if (File.Exists(path)) File.Delete(path); } catch { } }
+    /// <summary>Deletes the file if it's there. False only when it exists and couldn't be deleted (e.g. in use).</summary>
+    private static bool TryDelete(string path) { try { if (File.Exists(path)) File.Delete(path); return true; } catch { return false; } }
+
+    /// <summary>
+    /// Brings the list in line with the disk: picks up enable/disable done in the game's Mods menu and
+    /// forgets mods whose files are all gone (removed in the game).
+    /// </summary>
+    public static bool Reconcile(Manifest manifest, GameInstall game)
+    {
+        var changed = false;
+        foreach (var m in manifest.Mods.ToList())
+        {
+            if (m.Files.Count == 0 || m.Id == "bepinex") continue;
+            var fulls = m.Files.Select(r => { try { return SafeJoin(game.Root, r); } catch { return null; } }).Where(f => f != null).Cast<string>().ToList();
+            bool Any(string f) => File.Exists(f) || File.Exists(f + ".disabled") || File.Exists(f + Pending.NewSuffix);
+            if (fulls.Count > 0 && !fulls.Any(Any))
+            {
+                manifest.Mods.Remove(m); changed = true; continue;
+            }
+            var dlls = m.Files.Where(IsLoadableDll).Select(r => SafeJoin(game.Root, r)).ToList();
+            if (dlls.Count == 0) continue;
+            var off = dlls.All(f => !File.Exists(f) && File.Exists(f + ".disabled"));
+            if (off != m.Disabled) { m.Disabled = off; changed = true; }
+        }
+        return changed;
+    }
 
     private static void CleanEmptyDirs(GameInstall game, IEnumerable<string> rels)
     {

@@ -14,6 +14,31 @@ public sealed class GameInstall
     public string BepInExDir => Path.Combine(Root, "BepInEx");
     public string PluginsDir => Path.Combine(BepInExDir, "plugins");
 
+    /// <summary>The in-game Mods menu (Nomad Mod Manager) is installed: it applies queued changes at launch, so mods can be installed while the game runs.</summary>
+    public bool HasModManager => File.Exists(Path.Combine(BepInExDir, "patchers", "NomadModManager.Patcher.dll"))
+                                 && Directory.EnumerateFiles(PluginsDir, "NomadModManager.dll", SearchOption.AllDirectories).Any();
+
+    /// <summary>Running, and without the in-game Mods menu to take over: installs have to wait.</summary>
+    public bool BlocksInstall() => IsRunning() && !SafeHasModManager();
+
+    private bool SafeHasModManager() { try { return HasModManager; } catch { return false; } }
+
+    /// <summary>Tells the in-game Mods menu where this app is, so its Install buttons can open it.</summary>
+    public void RegisterWithModManager()
+    {
+        try
+        {
+            if (!Directory.Exists(BepInExDir)) return;
+            var dir = Path.Combine(BepInExDir, "NomadModManager");
+            Directory.CreateDirectory(dir);
+            var file = Path.Combine(dir, "downloader.txt");
+            var exe = Environment.ProcessPath ?? "";
+            if (exe.Length == 0 || (File.Exists(file) && File.ReadAllText(file).Trim() == exe)) return;
+            File.WriteAllText(file, exe);
+        }
+        catch { }
+    }
+
     private GameInstall(string root, string exe, bool x64) { Root = root; ExeName = exe; Is64Bit = x64; }
 
     /// <summary>Returns a GameInstall if the folder looks like a Unity game folder.</summary>

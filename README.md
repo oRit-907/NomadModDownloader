@@ -21,6 +21,7 @@ Download `NomadModDownloader.exe` from **[Releases](../../releases)**. It's a si
 - Drag a mod's zip, 7z, rar or dll onto the window to install it.
 - **Endorse** button that takes you to the mod's Endorse button on Nexus.
 - A Discord button next to PLAY for the Nomad Drive community.
+- Works with the in-game **Mods** menu (Nomad Mod Manager): its **Install** and **Update** buttons open the mod here, ready to download, and mods can be installed while the game is running. Files that are in use are swapped in the next time the game starts.
 - 12 languages, with live translation of Nexus mod summaries.
 - Styled like Nomad Drive's own menus. The menu backgrounds are read from your own copy of the game, and the logo from Steam's library cache, so no game art ships with the app.
 
