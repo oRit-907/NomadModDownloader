@@ -44,6 +44,7 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
         NomadModDownloader.UI.Theme.Init();
+        Updater.CleanUpAfterUpdate(); // remove the previous version's exe after an update
 
         // The update screen: checks for a new version first, and restarts into it if there is one.
         var appChecked = false;

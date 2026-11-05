@@ -105,6 +105,37 @@ public sealed class Updater
     /// Starts a helper that swaps the exe once this process has exited, then starts the new version. The old exe is kept
     /// as NomadModDownloader.old.exe until the next update.
     /// </summary>
+    /// <summary>
+    /// After an update: the new version has started fine, so remove the previous exe (kept as "&lt;name&gt;.old.exe"
+    /// until now, so a failed swap could be undone) and the downloaded installer copy. Retries for a few seconds
+    /// while the update script finishes.
+    /// </summary>
+    public static void CleanUpAfterUpdate()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var current = Environment.ProcessPath;
+                if (current == null) return;
+                var dir = Path.GetDirectoryName(current)!;
+                var targets = new List<string> { Path.Combine(dir, Path.GetFileNameWithoutExtension(current) + ".old.exe") };
+                var updateDir = Path.Combine(AppPaths.Root, "update");
+                if (Directory.Exists(updateDir)) targets.AddRange(Directory.EnumerateFiles(updateDir, "*.new.exe"));
+                for (var attempt = 0; attempt < 10 && targets.Count > 0; attempt++)
+                {
+                    foreach (var f in targets.ToList())
+                    {
+                        try { if (File.Exists(f)) File.Delete(f); targets.Remove(f); }
+                        catch { /* still in use: try again shortly */ }
+                    }
+                    if (targets.Count > 0) await Task.Delay(1000);
+                }
+            }
+            catch { }
+        });
+    }
+
     public static void ApplyAndRestart(string newExe)
     {
         var current = Environment.ProcessPath!;
