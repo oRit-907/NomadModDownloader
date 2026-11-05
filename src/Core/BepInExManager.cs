@@ -1,0 +1,170 @@
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using SharpCompress.Archives;
+using SharpCompress.Common;
+
+namespace NomadModDownloader.Core;
+
+public enum BepInExState { NotInstalled, NeedsFirstRun, Ready, Disabled, Broken, Il2CppGame }
+
+public sealed record BepInExStatus(BepInExState State, string? Version, string Message);
+
+public sealed record BepInExPlan(string Version, Uri Url, long SizeBytes, string Architecture, string GameRoot);
+
+public static class BepInExManager
+{
+    // Fallback if the GitHub API can't be reached (rate limit, offline API).
+    private const string PinnedVersion = "5.4.23.5";
+
+    public static BepInExStatus Check(GameInstall game)
+    {
+        var core = Path.Combine(game.BepInExDir, "core", "BepInEx.dll");
+        var proxy = Path.Combine(game.Root, "winhttp.dll");
+        var hasCore = File.Exists(core);
+        var hasProxy = File.Exists(proxy);
+
+        if (!hasCore && !hasProxy)
+        {
+            if (game.IsIl2Cpp)
+                return new(BepInExState.Il2CppGame, null, L.T("This copy of the game is IL2CPP, which needs BepInEx 6 — automatic install only supports the normal (Mono) build."));
+            return new(BepInExState.NotInstalled, null, L.T("BepInEx is not installed."));
+        }
+
+        string? version = null;
+        try { version = System.Diagnostics.FileVersionInfo.GetVersionInfo(core).ProductVersion?.Split('+')[0]; } catch { }
+
+        if (hasCore != hasProxy)
+            return new(BepInExState.Broken, version, hasCore ? L.T("BepInEx files are there but winhttp.dll is missing, so it won't load.") : L.T("winhttp.dll is there but the BepInEx folder is missing."));
+
+        var doorstop = Path.Combine(game.Root, "doorstop_config.ini");
+        if (File.Exists(doorstop) && Regex.IsMatch(File.ReadAllText(doorstop), @"(?im)^\s*enabled\s*=\s*false"))
+            return new(BepInExState.Disabled, version, L.T("BepInEx is installed but switched off in doorstop_config.ini."));
+
+        var ranOnce = File.Exists(Path.Combine(game.BepInExDir, "config", "BepInEx.cfg")) || File.Exists(Path.Combine(game.BepInExDir, "LogOutput.log"));
+        if (!ranOnce)
+            return new(BepInExState.NeedsFirstRun, version, L.T("BepInEx is installed. Launch the game once so it finishes setting itself up."));
+
+        return new(BepInExState.Ready, version, L.T("BepInEx is installed and ready."));
+    }
+
+    /// <summary>Works out which BepInEx 5 build to download. Nothing is written to disk.</summary>
+    public static async Task<BepInExPlan> PlanAsync(HttpClient http, GameInstall game, CancellationToken ct)
+    {
+        var arch = game.Is64Bit ? "x64" : "x86";
+        return await LatestAsync(http, game, ct) ?? new BepInExPlan(PinnedVersion,
+            new Uri($"https://github.com/BepInEx/BepInEx/releases/download/v{PinnedVersion}/BepInEx_win_{arch}_{PinnedVersion}.zip"),
+            0, arch, game.Root);
+    }
+
+    /// <summary>The newest stable BepInEx 5 on GitHub, or null if GitHub can't be reached right now.</summary>
+    public static async Task<BepInExPlan?> LatestAsync(HttpClient http, GameInstall game, CancellationToken ct)
+    {
+        var arch = game.Is64Bit ? "x64" : "x86";
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/BepInEx/BepInEx/releases?per_page=20");
+            req.Headers.Add("Accept", "application/vnd.github+json");
+            using var resp = await http.SendAsync(req, ct);
+            if (resp.IsSuccessStatusCode)
+            {
+                var releases = JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct))!.AsArray();
+                foreach (var rel in releases)
+                {
+                    if (rel == null || rel["prerelease"]?.GetValue<bool>() == true || rel["draft"]?.GetValue<bool>() == true) continue;
+                    var tag = rel["tag_name"]?.GetValue<string>()?.TrimStart('v') ?? "";
+                    if (!tag.StartsWith("5.")) continue;
+                    foreach (var a in rel["assets"]?.AsArray() ?? new JsonArray())
+                    {
+                        var name = a?["name"]?.GetValue<string>() ?? "";
+                        if (Regex.IsMatch(name, $@"^BepInEx_win_{arch}_5[\d.]+\.zip$", RegexOptions.IgnoreCase))
+                            return new BepInExPlan(tag, new Uri(a!["browser_download_url"]!.GetValue<string>()), a["size"]?.GetValue<long>() ?? 0, arch, game.Root);
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { }
+        return null;
+    }
+
+    /// <summary>A newer BepInEx 5 than the one in the game, or null (up to date, not installed, or GitHub unreachable).</summary>
+    public static async Task<BepInExPlan?> CheckForUpdateAsync(HttpClient http, GameInstall game, CancellationToken ct)
+    {
+        var s = Check(game);
+        if (s.State is not (BepInExState.Ready or BepInExState.NeedsFirstRun or BepInExState.Disabled) || s.Version == null) return null;
+        if (!Version.TryParse(s.Version, out var have)) return null;
+        var latest = await LatestAsync(http, game, ct);
+        if (latest == null || !Version.TryParse(latest.Version, out var newest)) return null;
+        return Normalize(newest) > Normalize(have) ? latest : null;
+    }
+
+    private static Version Normalize(Version v) => new(v.Major, v.Minor, Math.Max(0, v.Build), Math.Max(0, v.Revision));
+
+    /// <summary>
+    /// Updates BepInEx in place. Plugins, configs and doorstop_config.ini are kept (the Nomad Drive pack points
+    /// doorstop at the unstripped DLLs the game needs). The old core files are backed up and put back if anything fails.
+    /// </summary>
+    public static async Task<List<string>> UpdateAsync(HttpClient http, GameInstall game, BepInExPlan plan, IProgress<double>? progress, CancellationToken ct)
+    {
+        if (game.IsRunning()) throw new InvalidOperationException(L.T("Close Nomad Drive before installing BepInEx."));
+        var old = Check(game).Version ?? "old";
+        var backup = Path.Combine(AppPaths.Backups, "bepinex-" + old);
+        void Copy(string from, string to)
+        {
+            foreach (var f in Directory.Exists(from) ? Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories) : Enumerable.Empty<string>())
+            {
+                var dest = Path.Combine(to, Path.GetRelativePath(from, f));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Copy(f, dest, true);
+            }
+        }
+        if (Directory.Exists(backup)) Directory.Delete(backup, true);
+        Copy(Path.Combine(game.BepInExDir, "core"), Path.Combine(backup, "BepInEx", "core"));
+        foreach (var f in new[] { "winhttp.dll", ".doorstop_version" })
+            if (File.Exists(Path.Combine(game.Root, f))) { Directory.CreateDirectory(backup); File.Copy(Path.Combine(game.Root, f), Path.Combine(backup, f), true); }
+
+        try
+        {
+            return await InstallAsync(http, game, plan, progress, ct, keep: new[] { "doorstop_config.ini" });
+        }
+        catch
+        {
+            // Put the previous version back.
+            Copy(Path.Combine(backup, "BepInEx", "core"), Path.Combine(game.BepInExDir, "core"));
+            foreach (var f in new[] { "winhttp.dll", ".doorstop_version" })
+                if (File.Exists(Path.Combine(backup, f))) File.Copy(Path.Combine(backup, f), Path.Combine(game.Root, f), true);
+            throw;
+        }
+    }
+
+    /// <summary>Downloads and unpacks BepInEx into the game folder. Only call after the user approved the plan.</summary>
+    public static async Task<List<string>> InstallAsync(HttpClient http, GameInstall game, BepInExPlan plan, IProgress<double>? progress, CancellationToken ct, string[]? keep = null)
+    {
+        if (game.IsRunning()) throw new InvalidOperationException(L.T("Close Nomad Drive before installing BepInEx."));
+
+        var zip = await NexusApi.DownloadFileAsync(http, plan.Url, AppPaths.Downloads, $"BepInEx_win_{plan.Architecture}_{plan.Version}", progress, ct);
+
+        var written = new List<string>();
+        using (var archive = ArchiveFactory.OpenArchive(zip, new SharpCompress.Readers.ReaderOptions()))
+        {
+            // Sanity check: this must really be a BepInEx pack.
+            var keys = archive.Entries.Where(e => !e.IsDirectory).Select(e => ModInstaller.Norm(e.Key ?? "")).ToList();
+            if (!keys.Any(k => k.EndsWith("BepInEx/core/BepInEx.dll", StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException(L.T("The downloaded file doesn't look like BepInEx. Nothing was installed."));
+
+            foreach (var e in archive.Entries.Where(e => !e.IsDirectory))
+            {
+                var rel = ModInstaller.Norm(e.Key ?? "");
+                var dest = ModInstaller.SafeJoin(game.Root, rel);
+                if (keep != null && File.Exists(dest) && keep.Any(k => k.Equals(rel, StringComparison.OrdinalIgnoreCase))) continue; // leave the user's copy
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                using (var src = e.OpenEntryStream())
+                using (var fs = File.Create(dest)) src.CopyTo(fs);
+                written.Add(rel);
+            }
+        }
+
+        Directory.CreateDirectory(game.PluginsDir);
+        return written;
+    }
+}

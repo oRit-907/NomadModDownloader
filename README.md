@@ -34,6 +34,10 @@ An update screen checks this repo's latest release each time the app starts. If 
 
 BepInEx is kept on the latest BepInEx 5 too, but only while the game is closed. Your plugins, configs and `doorstop_config.ini` are kept.
 
+## Source code
+
+The full source is in [`src/`](src). [BUILD.md](BUILD.md) explains how to build it and what the app does on your PC.
+
 ## Publishing a new version
 
 Releases follow the same process as Ignite3D. They're built in a Claude cloud session and published by `.github/workflows/release.yml`:
