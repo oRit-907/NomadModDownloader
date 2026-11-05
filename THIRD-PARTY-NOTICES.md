@@ -1,0 +1,25 @@
+# Third-party notices
+
+## DotNetFix (src/Assets/DotNetFix.zip)
+
+Nomad Drive ships a code-stripped `mscorlib.dll` that BepInEx's preloader can't start with. The app installs full
+class libraries into the game's `DotNetFix` folder and points doorstop at them (`dll_search_path_override`).
+
+- **Mono class libraries** (mscorlib, System, System.Core, System.Xml and the other `System.*` assemblies from the
+  "Mono development team"). Copyright (c) Various Mono authors. Licensed under the MIT License:
+  https://github.com/mono/mono/blob/main/LICENSE
+- **System.Collections.Immutable, System.Runtime.CompilerServices.Unsafe, System.Memory, System.Buffers**
+  (where from Microsoft). Copyright (c) .NET Foundation and Contributors. Licensed under the MIT License:
+  https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
+
+MIT License: Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction, including without
+limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
+
+## Nomad Mod Manager (mod/NomadModManager)
+
+libwebp and libsharpyuv: Copyright (c) Google Inc. BSD 3-Clause License:
+https://chromium.googlesource.com/webm/libwebp/+/refs/heads/main/COPYING

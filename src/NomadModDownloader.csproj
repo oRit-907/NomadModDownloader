@@ -12,7 +12,7 @@
     <AssemblyName>NomadModDownloader</AssemblyName>
     <RootNamespace>NomadModDownloader</RootNamespace>
     <Product>Nomad Mod Downloader</Product>
-    <Version>2.4.3</Version>
+    <Version>2.5.0</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationVisualStyles>true</ApplicationVisualStyles>
@@ -31,6 +31,8 @@
     <EmbeddedResource Include="Lang\*.json" LogicalName="Lang.%(Filename)%(Extension)" />
     <!-- Nomad Drive's menu backgrounds and logo (from the game) and its Noto Sans font (OFL). -->
     <EmbeddedResource Include="Art\*.ttf;Art\discord.png" LogicalName="Art.%(Filename)%(Extension)" />
+    <!-- Nomad Drive's mscorlib is stripped; BepInEx needs Mono's full class libraries (MIT). See THIRD-PARTY-NOTICES.md. -->
+    <EmbeddedResource Include="Assets\DotNetFix.zip" LogicalName="Assets.DotNetFix.zip" />
   </ItemGroup>
 
   <ItemGroup>

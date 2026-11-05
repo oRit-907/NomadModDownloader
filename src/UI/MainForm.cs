@@ -166,7 +166,7 @@ internal sealed partial class MainForm : Form
             Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.TopDown,
             WrapContents = false, BackColor = Color.Transparent, Padding = new Padding(0, 12, 0, 0)
         };
-        foreach (var name in new[] { "Browse mods", "Installed", "Mod settings", "Profiles", "Saves", "Problems", "Activity" })
+        foreach (var name in new[] { "Browse mods", "Installed", "Mod settings", "Profiles", "Saves", "Problems", "Check BepInEx", "Activity" })
         {
             var item = new Label
             {
@@ -296,6 +296,7 @@ internal sealed partial class MainForm : Form
         AddPage("Profiles", BuildProfilesPage());
         AddPage("Saves", BuildSavesPage());
         AddPage("Problems", BuildProblemsPage());
+        AddPage("Check BepInEx", BuildCheckerPage());
         AddPage("Activity", BuildActivityPage());
 
         main.Controls.Add(_pageHost);
@@ -334,6 +335,7 @@ internal sealed partial class MainForm : Form
         if (name == "Profiles") RefreshProfiles();
         if (name == "Saves") RefreshSaves();
         if (name == "Problems") RefreshProblems();
+        if (name == "Check BepInEx") _ = RefreshChecksAsync(lookOnline: false);
         if (name == "Nexus") _ = _browser.OpenedAsync();
     }
 
@@ -533,7 +535,7 @@ internal sealed partial class MainForm : Form
 
         await AutoUpdatesAsync();
         await StartupModUpdateCheckAsync();
-        if (_game != null) RefreshProblems();
+        if (_game != null) { RefreshProblems(); _ = RefreshChecksAsync(lookOnline: false); }
     }
 
     /// <summary>Switches to a game folder: saves it, refreshes the status card and loads the game's menu art.</summary>

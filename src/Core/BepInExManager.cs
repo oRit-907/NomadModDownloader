@@ -165,6 +165,37 @@ public static class BepInExManager
         }
 
         Directory.CreateDirectory(game.PluginsDir);
+        // Nomad Drive's mscorlib is stripped: without the full Mono libraries BepInEx's preloader crashes.
+        if (BepInExChecker.EnsureNomadSetup(game)) written.Add(BepInExChecker.DotNetFixFolder + "/");
         return written;
+    }
+
+    /// <summary>
+    /// Reinstalls BepInEx 5 from scratch for a broken or wrong install: the old core folder, winhttp.dll and
+    /// doorstop_config.ini go to a backup first. Plugins, patchers and settings are kept.
+    /// </summary>
+    public static async Task<(List<string> Written, string Backup)> RepairAsync(HttpClient http, GameInstall game, BepInExPlan plan, IProgress<double>? progress, CancellationToken ct)
+    {
+        if (game.IsRunning()) throw new InvalidOperationException(L.T("Close Nomad Drive before installing BepInEx."));
+        var backup = Path.Combine(AppPaths.Backups, $"bepinex-repair-{DateTime.Now:yyyyMMdd-HHmmss}");
+        Directory.CreateDirectory(backup);
+        var core = Path.Combine(game.BepInExDir, "core");
+        if (Directory.Exists(core))
+        {
+            foreach (var f in Directory.EnumerateFiles(core, "*", SearchOption.AllDirectories))
+            {
+                var dest = Path.Combine(backup, "BepInEx", "core", Path.GetRelativePath(core, f));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Copy(f, dest, true);
+            }
+            Directory.Delete(core, true);
+        }
+        foreach (var f in new[] { "winhttp.dll", "doorstop_config.ini", ".doorstop_version" })
+        {
+            var p = Path.Combine(game.Root, f);
+            if (File.Exists(p)) { File.Copy(p, Path.Combine(backup, f), true); File.Delete(p); }
+        }
+        var written = await InstallAsync(http, game, plan, progress, ct);
+        return (written, backup);
     }
 }
