@@ -26,8 +26,10 @@ This repo is private, so GitHub needs a token to see the releases. The first tim
 
 ## Publishing a new version
 
-1. Bump `<Version>` in `NomadModDownloader.csproj`.
-2. Build with `dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish`.
-3. Create a release tagged `vX.Y.Z`, matching the version, and attach `NomadModDownloader.exe`. The release notes are shown in the app's update prompt.
+Releases follow the same process as Ignite3D. They're built in a Claude cloud session and published by `.github/workflows/release.yml`:
+
+1. Bump `<Version>` in `NomadModDownloader.csproj` and build with `dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish`.
+2. From `main`, push a branch `release/vX.Y.Z` with a `release-files/` folder containing `NomadModDownloader-X.Y.Z.exe`, `NomadModDownloader-X.Y.Z-win-x64.zip`, an optional `notes.md`, and **`SHA256SUMS` last**. Split any file over 100 MB into `.part00`, `.part01`, and so on.
+3. The workflow checks the hashes, creates release `vX.Y.Z` on the `main` commit (the tag doesn't carry the files), marks it Latest, and deletes the branch.
 
 > The exe includes Nomad Drive's logo and menu backgrounds for its look. That art belongs to the game's developers, so keep this repo and its releases private.

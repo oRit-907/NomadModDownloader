@@ -1,0 +1,85 @@
+# Makes the GitHub release for each Nomad Mod Downloader version (same process as Ignite3D's).
+#
+# In-app updates read this repo's latest release and download its .exe.
+#
+# To make a release, push a branch named release/vX.Y.Z (started from main) with the files in release-files/:
+#   - files over 100 MB split into parts: NomadModDownloader-X.Y.Z.exe.part00, .part01, ... (smaller files as they are)
+#   - SHA256SUMS: sha256sum output for the joined files (pushed last; until it's there the run does nothing)
+#   - notes.md (optional): the release notes.
+# The workflow joins the parts, checks the hashes, creates release vX.Y.Z on the main commit the branch started
+# from (so the tag never carries the files), attaches the files, then deletes the branch.
+name: Release
+
+on:
+  push:
+    branches: ['release/*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Make the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG="${BRANCH#release/}"
+          VER="${TAG#v}"
+          if [ "$TAG" != "v$VER" ]; then echo "Branch must be release/vX.Y.Z"; exit 1; fi
+          F=release-files
+          if [ ! -f "$F/SHA256SUMS" ]; then
+            echo "No $F/SHA256SUMS yet, so there's nothing to do."
+            exit 0
+          fi
+
+          mkdir -p out
+          for first in "$F"/*.part00; do
+            [ -e "$first" ] || continue
+            name="$(basename "${first%.part00}")"
+            cat "$F/$name".part[0-9][0-9] > "out/$name"
+          done
+          for f in "$F"/*; do
+            case "$f" in *.part[0-9][0-9]|*/SHA256SUMS|*/notes.md) continue ;; esac
+            cp "$f" out/
+          done
+          (cd out && sha256sum -c "../$F/SHA256SUMS")
+
+          sum() { sha256sum "out/$1" | cut -d' ' -f1; }
+          {
+            echo "**New to Nomad Mod Downloader?** Download **NomadModDownloader-$VER.exe** below and run it. It's a single file, with nothing to install and no .NET needed."
+            echo "**Already have it?** You don't need anything here: it offers this version on startup, or from **Activity → Check for app updates**."
+            echo
+            if [ -f "$F/notes.md" ]; then cat "$F/notes.md"; fi
+            echo
+            echo "## Downloads"
+            if [ -f "out/NomadModDownloader-$VER.exe" ]; then echo "- **NomadModDownloader-$VER.exe**: the app (Windows 10/11, 64-bit)."; fi
+            if [ -f "out/NomadModDownloader-$VER-win-x64.zip" ]; then echo "- **NomadModDownloader-$VER-win-x64.zip**: the same app plus the README, zipped."; fi
+            echo
+            echo "The app isn't code-signed yet, so Windows SmartScreen may warn you. Choose **More info → Run anyway**."
+            echo
+            echo "## Checksums"
+            for f in out/*; do n="$(basename "$f")"; echo "- $n sha256: $(sum "$n")"; done
+          } > release-notes.md
+          cat release-notes.md
+
+          TITLE="Nomad Mod Downloader $VER"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" out/* --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes-file release-notes.md --latest
+          else
+            BASE="$(git merge-base HEAD origin/main)"
+            gh release create "$TAG" out/* --title "$TITLE" --notes-file release-notes.md --target "$BASE" --latest
+          fi
+          git push origin --delete "$BRANCH"
