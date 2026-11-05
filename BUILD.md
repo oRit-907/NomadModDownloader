@@ -14,10 +14,10 @@ The NuGet packages restore by themselves on the first build: SharpCompress, Micr
 From the `src` folder:
 
 ```
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -o publish
 ```
 
-The app is written to `src/publish/NomadModDownloader.exe`. The version number comes from `<Version>` in `src/NomadModDownloader.csproj`.
+The app is written to `src/publish/NomadModDownloader.exe`. It's deliberately not compressed (about 160 MB): compressed single-file exes look "packed" to antivirus scanners and get flagged. The version number comes from `<Version>` in `src/NomadModDownloader.csproj`.
 
 ## What the app does on your PC
 

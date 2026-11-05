@@ -27,7 +27,7 @@ Download `NomadModDownloader.exe` from **[Releases](../../releases)**. It's a si
 
 ## In-game Mods menu
 
-The repo also holds **Nomad Mod Manager**, a BepInEx plugin that adds a Mods menu to Nomad Drive's main menu (source and build steps in [`mod/NomadModManager`](mod/NomadModManager)). Each release has its zip next to the app.
+The repo also holds **Nomad Mod Manager**, a BepInEx plugin that adds a Mods menu to Nomad Drive's main menu (source and build steps in [`mod/NomadModManager`](mod/NomadModManager)). Each release has its zip next to the app. The in-game menu needs this app (2.4.0 or newer): its Install buttons hand mods to it.
 
 ## Finding the game
 
@@ -47,7 +47,7 @@ The full source is in [`src/`](src). [BUILD.md](BUILD.md) explains how to build 
 
 Releases follow the same process as Ignite3D. They're built in a Claude cloud session and published by `.github/workflows/release.yml`:
 
-1. Bump `<Version>` in `NomadModDownloader.csproj` and build with `dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish`.
+1. Bump `<Version>` in `NomadModDownloader.csproj` and build with `dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish`.
 2. From `main`, push a branch `release/vX.Y.Z` with a `release-files/` folder containing `NomadModDownloader-X.Y.Z.exe`, `NomadModDownloader-X.Y.Z-win-x64.zip`, an optional `notes.md`, and **`SHA256SUMS` last**. Split any file over 100 MB into `.part00`, `.part01`, and so on.
 3. The workflow checks the hashes, creates release `vX.Y.Z` on the `main` commit (the tag doesn't carry the files), marks it Latest, and deletes the branch.
 
