@@ -10,6 +10,17 @@ Download `NomadModDownloader.exe` from **[Releases](../../releases)**. It's a si
 - Log in to Nexus once. **Install** opens the file's page with the download button highlighted. Click **Manual download → Slow download** and the app installs the mod automatically.
 - Mods are placed automatically: loose DLLs go to `BepInEx\plugins\<Mod>\`, and archives with their own `BepInEx\…` layout are unpacked as laid out. Zip, 7z and rar all work.
 - The **Installed** tab checks for updates, enables or disables mods, and uninstalls them cleanly, restoring any files a mod replaced.
+- **Play** and **Play without mods** buttons. Mods switch back on by themselves after a vanilla run.
+- **Problems** reads the game's logs after each session and says which mod failed and why: missing requirements, duplicates, errors, crashes and conflicts. **Copy for a bug report** puts it all on the clipboard.
+- **Mod requirements**: if a mod needs other mods, the app offers to install those first.
+- **Update all**, with a count on the menu at startup and each mod's changelog before updating.
+- **Mod settings**: edit any mod's `BepInEx\config` file with switches, lists and boxes instead of a text editor.
+- **Profiles**: save sets of mods ("Vanilla+", "Cheats"…) and switch in one click. **Share codes** let friends install the same set.
+- **Saves**: backs up your Nomad Drive saves before mod changes, with one-click restore.
+- Warns you when Nomad Drive itself updates, with a quick "turn all mods off".
+- Drag a mod's zip, 7z, rar or dll onto the window to install it.
+- **Endorse** button that takes you to the mod's Endorse button on Nexus.
+- A Discord button next to PLAY for the Nomad Drive community.
 - 12 languages, with live translation of Nexus mod summaries.
 - Styled like Nomad Drive's own menus. The menu backgrounds are read from your own copy of the game, and the logo from Steam's library cache, so no game art ships with the app.
 
@@ -19,7 +30,7 @@ The app finds Nomad Drive by itself: through Steam (any library, even a renamed 
 
 ## Updates
 
-The app checks this repo's latest release when it starts. If there's a newer version, it downloads it, swaps itself and restarts. No GitHub account or token is needed. To be asked first instead, set `AutoUpdateApp: false` in `%AppData%\NomadModDownloader\settings.json`.
+An update screen checks this repo's latest release each time the app starts. If there's a newer version, it downloads it with a progress bar, swaps itself and restarts. Offline or slow, it gives up after a few seconds and the app opens as normal. No GitHub account or token is needed. To be asked first instead, set `AutoUpdateApp: false` in `%AppData%\NomadModDownloader\settings.json`.
 
 BepInEx is kept on the latest BepInEx 5 too, but only while the game is closed. Your plugins, configs and `doorstop_config.ini` are kept.
 
