@@ -8,6 +8,9 @@ class libraries into the game's `DotNetFix` folder and points doorstop at them (
 - **Mono class libraries** (mscorlib, System, System.Core, System.Xml and the other `System.*` assemblies from the
   "Mono development team"). Copyright (c) Various Mono authors. Licensed under the MIT License:
   https://github.com/mono/mono/blob/main/LICENSE
+- **netstandard.dll** (the .NET Standard 2.1 facade) and **Mono.Security.dll**, from the official Mono 6.12.0.206
+  Windows build (https://download.mono-project.com). MIT License, as above. Nomad Drive ships no netstandard.dll, so
+  mods built for .NET Standard 2.0/2.1 need it; Mono.Security matches the full System.dll above.
 - **System.Collections.Immutable, System.Runtime.CompilerServices.Unsafe, System.Memory, System.Buffers**
   (where from Microsoft). Copyright (c) .NET Foundation and Contributors. Licensed under the MIT License:
   https://github.com/dotnet/runtime/blob/main/LICENSE.TXT

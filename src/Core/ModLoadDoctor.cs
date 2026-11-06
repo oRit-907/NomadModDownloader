@@ -63,6 +63,7 @@ public static class ModLoadDoctor
         public required HashSet<string> Assemblies { get; init; }        // every assembly name the game can find
         public int BepInExMajor { get; init; }                           // 5 or 6
         public bool HasCompat5 { get; init; }                            // BepInEx 6 with the BepInEx 5 compatibility layer
+        public Version? NetStandard { get; init; }                       // highest .NET Standard the game can load
         public DateTime? LogTime => Report.LogTime;
     }
 
@@ -105,13 +106,15 @@ public static class ModLoadDoctor
         AddDir(Path.Combine(game.Root, BepInExChecker.DotNetFixFolder));
         AddDir(Path.Combine(game.Root, "MonoBleedingEdge", "lib", "mono", "4.5"));
         AddDir(Path.Combine(game.Root, "MonoBleedingEdge", "lib", "mono", "4.5", "Facades"));
-        foreach (var n in new[] { "mscorlib", "netstandard", "System", "System.Core" }) asm.Add(n);
+        foreach (var n in new[] { "mscorlib", "System", "System.Core" }) asm.Add(n);
+        var ns = BepInExChecker.NetStandardAvailable(game);
+        if (ns != null) asm.Add("netstandard");
 
         var major = BepInExManager.MajorOf(game);
         return new Context
         {
             Game = game, Report = report, Loaded = loaded, Enabled = enabled, Disabled = disabled, Assemblies = asm,
-            BepInExMajor = major, HasCompat5 = major == 6 && BepInExCompat.IsInstalled(game),
+            BepInExMajor = major, HasCompat5 = major == 6 && BepInExCompat.IsInstalled(game), NetStandard = ns,
         };
     }
 
@@ -159,6 +162,17 @@ public static class ModLoadDoctor
             return new LoadDiagnosis { State = LoadState.NoSession, Short = L.T("Not run yet"), Why = L.T("The game hasn't been started with BepInEx yet, so there's nothing to check."), HowToFix = L.T("Play the game once to the main menu, then come back."), Fix = LoadFix.Play, Plugins = names, Files = loadable };
 
         var started = names.Where(n => ctx.Loaded.Contains(n)).ToList();
+
+        // .NET Standard: without netstandard.dll the mod can't load, however recently it was installed.
+        var needNs = loadable.Select(BepInExChecker.NetStandardNeeded).Where(v => v != null).Max();
+        if (started.Count < names.Count && needNs != null && (ctx.NetStandard == null || ctx.NetStandard < needNs))
+            return new LoadDiagnosis
+            {
+                State = LoadState.DidntStart, Short = L.F("Needs .NET Standard {0}", needNs.ToString(2)), Fix = LoadFix.OpenChecker, Plugins = names, Files = loadable,
+                Why = L.F("This mod is built for .NET Standard {0}, and Nomad Drive doesn't include the library it needs (netstandard.dll).", needNs.ToString(2)),
+                HowToFix = L.T("Open Check BepInEx and set up .NET Standard support."),
+            };
+
         var newest = loadable.Max(File.GetLastWriteTime);
         if (started.Count < names.Count && ctx.LogTime is { } lt && newest > lt)
             return new LoadDiagnosis { State = LoadState.InstalledSince, Short = L.T("Installed since last start"), Why = L.T("This mod was installed or changed after the game last started."), HowToFix = L.T("Play the game once, then check again."), Fix = LoadFix.Play, Plugins = names, Files = loadable };

@@ -186,6 +186,19 @@ public static class BepInExChecker
         else if (stripped == false)
             Add(AreaNomad, CheckLevel.Ok, L.T("This version of Nomad Drive doesn't need the .NET fix."));
 
+        // .NET Standard 2.1: Nomad Drive ships no netstandard.dll, so mods built for .NET Standard can't load without one.
+        var ns = NetStandardAvailable(game);
+        var needNs = ModsNeedingNetStandard(game);
+        var needs21 = needNs.Where(m => m.Version >= new Version(2, 1)).Select(m => m.Name).ToList();
+        if (ns == null || ns < new Version(2, 1))
+            Add(AreaNomad, needNs.Count > 0 ? CheckLevel.Error : CheckLevel.Warning,
+                ns == null ? L.T(".NET Standard support isn't set up.") : L.F("Only .NET Standard {0} is set up, not 2.1.", ns.ToString(2)),
+                (needNs.Count > 0 ? L.F("{0} of your mods are built for .NET Standard and can't load without it:\n", needNs.Count) + string.Join("\n", needNs.Take(12).Select(m => "• " + m.Name + " (.NET Standard " + m.Version.ToString(2) + ")")) + "\n\n" : "") +
+                L.T("Nomad Drive doesn't include netstandard.dll, which mods built for .NET Standard 2.0 or 2.1 need. The fix adds Mono's .NET Standard 2.1 library (and the full Mono.Security it uses) to the .NET fix folder."),
+                CheckFix.InstallDotNetFix);
+        else
+            Add(AreaNomad, CheckLevel.Ok, needs21.Count > 0 ? L.F(".NET Standard 2.1 is supported ({0} mod(s) use it).", needs21.Count) : L.T(".NET Standard 2.1 is supported."));
+
         var crashLogs = Directory.EnumerateFiles(game.Root, "preloader_*.log").ToList();
         if (crashLogs.Count > 0)
         {
@@ -387,9 +400,64 @@ public static class BepInExChecker
     public static bool EnsureNomadSetup(GameInstall game)
     {
         if (CorlibIsStripped(GameCorlib(game)) != true) return false;
-        if (DotNetFixDir(game) is { } dir && CorlibIsStripped(Path.Combine(dir, "mscorlib.dll")) == false) return false;
+        if (DotNetFixDir(game) is { } dir && CorlibIsStripped(Path.Combine(dir, "mscorlib.dll")) == false
+            && AssemblyVersion(Path.Combine(dir, "netstandard.dll")) >= new Version(2, 1) && File.Exists(Path.Combine(dir, "Mono.Security.dll"))) return false;
         InstallDotNetFix(game);
         return true;
+    }
+
+    /// <summary>The highest .NET Standard the game can load: netstandard.dll in the .NET fix folder or the game's Managed folder.</summary>
+    public static Version? NetStandardAvailable(GameInstall game)
+    {
+        var dirs = new List<string>();
+        if (DotNetFixDir(game) is { } d) dirs.Add(d);
+        dirs.Add(Path.Combine(game.DataFolder, "Managed"));
+        return dirs.Select(x => AssemblyVersion(Path.Combine(x, "netstandard.dll"))).Where(v => v != null).Max();
+    }
+
+    /// <summary>Enabled mods built for .NET Standard, with the version each needs.</summary>
+    public static List<(string Name, Version Version)> ModsNeedingNetStandard(GameInstall game)
+    {
+        var list = new List<(string, Version)>();
+        if (!Directory.Exists(game.PluginsDir)) return list;
+        foreach (var dll in Directory.EnumerateFiles(game.PluginsDir, "*.dll", SearchOption.AllDirectories))
+        {
+            if (NetStandardNeeded(dll) is not { } v) continue;
+            var name = PluginInspector.Read(dll).Select(p => p.Name).FirstOrDefault() ?? Path.GetFileNameWithoutExtension(dll);
+            list.Add((name, v));
+        }
+        return list;
+    }
+
+    /// <summary>The netstandard version a DLL references, or null if it doesn't use .NET Standard.</summary>
+    public static Version? NetStandardNeeded(string dll)
+    {
+        try
+        {
+            using var fs = File.OpenRead(dll);
+            using var pe = new PEReader(fs);
+            if (!pe.HasMetadata) return null;
+            var md = pe.GetMetadataReader();
+            foreach (var h in md.AssemblyReferences)
+            {
+                var r = md.GetAssemblyReference(h);
+                if (md.GetString(r.Name) == "netstandard") return r.Version;
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    public static Version? AssemblyVersion(string dll)
+    {
+        try
+        {
+            if (!File.Exists(dll)) return null;
+            using var fs = File.OpenRead(dll);
+            using var pe = new PEReader(fs);
+            return pe.HasMetadata ? pe.GetMetadataReader().GetAssemblyDefinition().Version : null;
+        }
+        catch { return null; }
     }
 
     public static void InstallDotNetFix(GameInstall game)
