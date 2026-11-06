@@ -866,7 +866,8 @@ internal sealed partial class MainForm : Form
             {
                 var key = NameKey(m.Name);
                 if (key.Length >= 4) _knownByName.TryAdd(key, m);
-                if (IsLoaderPack(m)) { _browseHidden++; continue; }
+                // Not mods the app can install: BepInEx itself, mods nobody has downloaded, and programs (.exe).
+                if (IsLoaderPack(m) || m.Downloads == 0 || m.ExeOnly) { _browseHidden++; continue; }
                 var item = new ListViewItem(installed.Contains(m.ModId) || m.ModId == SelfModId ? "✓ " + m.Name : m.Name) { Tag = m };
                 item.SubItems.Add(m.Author);
                 item.SubItems.Add(m.Version);

@@ -22,6 +22,7 @@ namespace NomadModManager
         public long Downloads;
         public long Endorsements;
         public string Thumb = "";
+        public bool Hidden;            // not something to install: nobody has downloaded it, or its files are only programs (.exe)
         public string Category = "";   // our own category (Nexus files every Nomad Drive mod as Miscellaneous)
         public string PageUrl => $"https://www.nexusmods.com/{Nexus.GameDomain}/mods/{Id}";
     }
@@ -38,6 +39,8 @@ namespace NomadModManager
         public static readonly string[] SortNames = { "Updated", "Downloads", "Endorsed", "Newest" };
         private static readonly string[] SortKeys = { "updatedAt", "downloads", "endorsements", "createdAt" };
 
+        private static readonly HashSet<string> ProgramExt = new HashSet<string> { "exe", "msi" };
+        private static readonly HashSet<string> OldCategories = new HashSet<string> { "ARCHIVED", "OLD_VERSION", "REMOVED", "DELETED" };
         private static readonly Dictionary<string, Texture2D> Thumbs = new Dictionary<string, Texture2D>();
         private static readonly HashSet<string> ThumbLoading = new HashSet<string>();
 
@@ -54,6 +57,25 @@ namespace NomadModManager
             yield return Query(q, vars, d => data = d, e => err = e);
             if (err != null) { done(null, 0, err); yield break; }
             var list = (data?["mods"]?["nodes"] as JArray ?? new JArray()).Select(Parse).ToList();
+            foreach (var m in list) if (m.Downloads == 0) m.Hidden = true;
+
+            // Mods whose current files are all programs (.exe/.msi): one request for the whole page.
+            var check = list.Where(m => !m.Hidden).Select(m => m.Id).ToList();
+            if (check.Count > 0)
+            {
+                var sb = new StringBuilder("query {");
+                foreach (var id in check) sb.Append($" m{id}: modFiles(modId: {id}, gameId: {GameId}) {{ category detectedFileExtension }}");
+                sb.Append(" }");
+                JToken files = null;
+                yield return Query(sb.ToString(), null, d => files = d, e => { });
+                if (files is JObject fo)
+                    foreach (var m in list)
+                    {
+                        if (!(fo["m" + m.Id] is JArray arr)) continue;
+                        var current = arr.Where(f => !OldCategories.Contains(((string)f["category"] ?? "").ToUpperInvariant())).ToList();
+                        if (current.Count > 0 && current.All(f => ProgramExt.Contains(((string)f["detectedFileExtension"] ?? "").ToLowerInvariant()))) m.Hidden = true;
+                    }
+            }
             done(list, (int?)data?["mods"]?["totalCount"] ?? list.Count, null);
         }
 

@@ -50,6 +50,8 @@ namespace NomadModManager
         private bool _searchedOnce;
         private readonly List<NexusMod> _results = new List<NexusMod>();
         private int _total;
+        private int _fetched, _skipped;   // results read from Nexus, and how many of them aren't shown
+        private bool _moreOnNexus;
         private bool _loading;
         private string _error;
         private bool _checkedUpdates;
@@ -162,12 +164,16 @@ namespace NomadModManager
             _searchedOnce = true;
             _error = null;
             if (!more) { _results.Clear(); _scrollY = 0; }
-            _host.StartCoroutine(Nexus.Search(_search, _sort, more ? _results.Count : 0, 100, (list, total, err) =>
+            if (!more) { _fetched = 0; _skipped = 0; }
+            _host.StartCoroutine(Nexus.Search(_search, _sort, _fetched, 100, (list, total, err) =>
             {
                 _loading = false;
                 if (err != null) { _error = err; return; }
-                _results.AddRange(list.Where(m => _results.All(r => r.Id != m.Id)));
-                _total = total;
+                _fetched += list.Count;
+                _skipped += list.Count(m => m.Hidden);
+                _results.AddRange(list.Where(m => !m.Hidden && _results.All(r => r.Id != m.Id)));
+                _total = Math.Max(0, total - _skipped);
+                _moreOnNexus = _fetched < total;
                 foreach (var m in list) _cat.SetNexusInfo(m.Id, m.Version, m.Author, m.Name, m.Summary);
                 _cat.LearnNames(list);
                 _cat.Refresh();
@@ -395,7 +401,7 @@ namespace NomadModManager
             var cols = view.width > 1300 * _s ? 3 : 2;
             var colW = (view.width - 18 * _s - (cols - 1) * gap * _s) / cols;
             var rows = (shown.Count + cols - 1) / cols;
-            var more = _results.Count < _total;
+            var more = _moreOnNexus;
             var inner = BeginScroll(view, rows * (cardH + gap) * _s + (more ? 64 * _s : 0));
             for (var i = 0; i < shown.Count; i++)
             {

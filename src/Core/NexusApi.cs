@@ -19,6 +19,8 @@ public sealed class ModInfo
     public string? ThumbnailUrl { get; set; }
     public string? PictureUrl { get; set; }
     public DateTime? UpdatedAt { get; set; }
+    /// <summary>Its current files are only programs (.exe/.msi), not mods the app can install.</summary>
+    public bool ExeOnly { get; set; }
     public string PageUrl => $"https://www.nexusmods.com/{NexusApi.GameDomain}/mods/{ModId}";
 }
 
@@ -139,7 +141,26 @@ public sealed class NexusApi
         foreach (var n in data["mods"]?["nodes"]?.AsArray() ?? new JsonArray())
             if (n != null) mods.Add(ParseMod(n));
         var total = data["mods"]?["totalCount"]?.GetValue<int>() ?? mods.Count;
+        try { await MarkExeOnlyAsync(mods, ct); } catch (Exception) when (!ct.IsCancellationRequested) { /* list them anyway */ }
         return (mods, total);
+    }
+
+    private static readonly HashSet<string> ProgramExtensions = new(StringComparer.OrdinalIgnoreCase) { "exe", "msi" };
+    private static readonly HashSet<string> OldFileCategories = new(StringComparer.OrdinalIgnoreCase) { "ARCHIVED", "OLD_VERSION", "REMOVED", "DELETED" };
+
+    /// <summary>Flags mods whose current files are all programs (one request for the whole page).</summary>
+    private async Task MarkExeOnlyAsync(List<ModInfo> mods, CancellationToken ct)
+    {
+        var ids = mods.Where(m => m.Downloads > 0).Select(m => m.ModId).Distinct().ToList();
+        if (ids.Count == 0) return;
+        var q = "query { " + string.Join(" ", ids.Select(id => $"m{id}: modFiles(modId: {id}, gameId: {GameId}) {{ category detectedFileExtension }}")) + " }";
+        var data = await QueryAsync(q, null, ct);
+        foreach (var m in mods)
+        {
+            if (data[$"m{m.ModId}"] is not JsonArray files) continue;
+            var current = files.Where(f => f != null && !OldFileCategories.Contains(Str(f["category"]))).ToList();
+            m.ExeOnly = current.Count > 0 && current.All(f => ProgramExtensions.Contains(Str(f!["detectedFileExtension"])));
+        }
     }
 
     public async Task<ModInfo?> GetModAsync(int modId, CancellationToken ct = default)
