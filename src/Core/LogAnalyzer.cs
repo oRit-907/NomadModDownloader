@@ -126,6 +126,7 @@ public static class LogAnalyzer
             }
 
             if (level is not ("Error" or "Fatal")) continue;
+            if (IsHarmless(source, msg)) continue;
             var plugin = source is "BepInEx" or "Unity Log" or "HarmonyX" or "Harmony" or "Preloader" ? null : source;
             var title = source.StartsWith("Harmony", StringComparison.OrdinalIgnoreCase)
                 ? L.T("A mod couldn't change the game's code (probably not updated for this game version).")
@@ -140,6 +141,13 @@ public static class LogAnalyzer
         if (report.LoadedPlugins.Count > 0 && !report.ChainloaderFinished)
             report.Problems.Insert(0, new Problem { Level = ProblemLevel.Crash, Title = L.T("BepInEx didn't finish loading mods: the game probably closed or crashed while starting."), Detail = "" });
     }
+
+    /// <summary>
+    /// Errors BepInEx itself logs that don't affect mods. "Unable to start Unity log writer": on Unity 6, BepInEx 6
+    /// can't copy its messages into Unity's own Player.log at startup. Mods still load and LogOutput.log is complete.
+    /// </summary>
+    public static bool IsHarmless(string source, string msg) =>
+        source == "BepInEx" && msg.StartsWith("Unable to start Unity log writer", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Links each problem to an installed mod: by plugin name, plugin id, or DLL / folder name.</summary>
     private static void Attribute(SessionReport report, GameInstall game, Manifest manifest)
