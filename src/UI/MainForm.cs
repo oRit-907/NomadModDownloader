@@ -380,6 +380,7 @@ internal sealed partial class MainForm : Form
                 ? L.F("Uploaded {0}", Fmt.Date(f.Date.ToLocalTime())) + (string.IsNullOrWhiteSpace(f.Description) ? "" : " — " + System.Net.WebUtility.HtmlDecode(StripTags(f.Description)))
                   + (f.Changelog.Count > 0 ? "\n" + Changelog(f) : "")
                 : "";
+            if (_byHandNote) _fileInfo.Text = ByHandNote + (_fileInfo.Text.Length > 0 ? "\n" + _fileInfo.Text : "");
             if (_selectedMod?.ModId == SelfModId) ShowSelfPageState();
         };
         _fileInfo = new Label { ForeColor = Theme.Muted, AutoSize = true, MaximumSize = new Size(W, 160), Margin = new Padding(0, 0, 0, 14), Font = Theme.Small, BackColor = Color.Transparent };
@@ -862,13 +863,15 @@ internal sealed partial class MainForm : Form
             _modList.BeginUpdate();
             if (reset) _modList.Items.Clear();
             var installed = _manifest.Mods.Select(m => m.ModId).ToHashSet();
+            var byHand = HandInstalledKeys();
             foreach (var m in mods)
             {
                 var key = NameKey(m.Name);
                 if (key.Length >= 4) _knownByName.TryAdd(key, m);
                 // Not mods the app can install: BepInEx itself, mods nobody has downloaded, and programs (.exe).
                 if (IsLoaderPack(m) || m.Downloads == 0 || m.ExeOnly) { _browseHidden++; continue; }
-                var item = new ListViewItem(installed.Contains(m.ModId) || m.ModId == SelfModId ? "✓ " + m.Name : m.Name) { Tag = m };
+                var have = installed.Contains(m.ModId) || m.ModId == SelfModId || byHand.Contains(key);
+                var item = new ListViewItem(have ? "✓ " + m.Name : m.Name) { Tag = m };
                 item.SubItems.Add(m.Author);
                 item.SubItems.Add(m.Version);
                 item.SubItems.Add(Fmt.Count(m.Downloads));
@@ -906,6 +909,7 @@ internal sealed partial class MainForm : Form
         _ = ShowRequirementsAsync(mod);
         _files.Items.Clear();
         _allFiles = new();
+        _byHandNote = false;
         _showOld.Visible = false;
         _fileInfo.Text = L.T("Loading files…");
         var oldImage = _picture.Image;
@@ -920,7 +924,9 @@ internal sealed partial class MainForm : Form
             _allFiles = files;
             PopulateFiles();
             var already = _manifest.Mods.FirstOrDefault(m => m.ModId == mod.ModId);
-            _installButton.Text = already != null ? L.T("Reinstall") : L.T("Install");
+            var byHand = already == null && HandInstalledKeys().Contains(NameKey(mod.Name));
+            _installButton.Text = already != null || byHand ? L.T("Reinstall") : L.T("Install");
+            if (byHand && !_byHandNote) { _byHandNote = true; _fileInfo.Text = ByHandNote + (_fileInfo.Text.Length > 0 ? "\n" + _fileInfo.Text : ""); }
             if (mod.ModId == SelfModId) ShowSelfPageState();
         }
         catch (Exception ex) { _fileInfo.Text = L.T("Couldn't load files: ") + ex.Message; }
@@ -1208,6 +1214,10 @@ internal sealed partial class MainForm : Form
         Log(meta.Backups.Count > 0
             ? L.F("Installed {0} v{1} → {2} ({3} file(s), {4} replaced file(s) backed up)", mod.Name, meta.Version, plan.TargetDescription, meta.Files.Count, meta.Backups.Count)
             : L.F("Installed {0} v{1} → {2} ({3} file(s))", mod.Name, meta.Version, plan.TargetDescription, meta.Files.Count));
+        if (meta.Replaced.Count > 0)
+            Log(L.F("  Replaced your hand-installed copy (backed up): {0}", string.Join(", ", meta.Replaced.Select(r => r.Replace('/', '\\')))));
+        if (meta.NotReplaced.Count > 0)
+            Log(L.F("  Couldn't remove your hand-installed copy, so the mod is there twice (BepInEx runs the newest): {0}. Close the game and install again, or remove it on the Installed tab.", string.Join(", ", meta.NotReplaced.Select(r => r.Replace('/', '\\')))));
         if (plan.Skipped.Count > 0) Log(L.T("  Skipped (readmes/extra files): ") + string.Join(", ", plan.Skipped.Take(8)) + (plan.Skipped.Count > 8 ? " …" : ""));
         RefreshGame();
         RefreshInstalled();
@@ -1359,6 +1369,21 @@ internal sealed partial class MainForm : Form
         }
         catch { }
         return result;
+    }
+
+    private bool _byHandNote;
+    private static string ByHandNote => L.T("You already have this mod (added by hand). Installing it here replaces your copy, so it's tracked and updated.");
+    private HashSet<string>? _handKeys;
+    private DateTime _handKeysAt;
+
+    /// <summary>Mods you added by hand, as name keys (cached briefly: it reads every hand-installed DLL).</summary>
+    private HashSet<string> HandInstalledKeys()
+    {
+        if (_game == null) return new();
+        if (_handKeys != null && DateTime.Now - _handKeysAt < TimeSpan.FromSeconds(10)) return _handKeys;
+        try { _handKeys = ModInstaller.HandInstalledNameKeys(_game, _manifest); } catch { _handKeys = new(); }
+        _handKeysAt = DateTime.Now;
+        return _handKeys;
     }
 
     private static string NameKey(string name) => new string((name ?? "").Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());

@@ -23,6 +23,9 @@ public sealed class InstalledMod
 
     // Not saved — filled by update checks.
     [System.Text.Json.Serialization.JsonIgnore] public ModFileInfo? Update { get; set; }
+    /// <summary>Not saved — hand-installed copies of the same plugin this install replaced (backed up), and ones it couldn't.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public List<string> Replaced { get; set; } = new();
+    [System.Text.Json.Serialization.JsonIgnore] public List<string> NotReplaced { get; set; } = new();
 }
 
 public sealed class Manifest
@@ -297,6 +300,7 @@ public static class ModInstaller
             meta.Disabled = false;
             manifest.Mods.RemoveAll(m => m.Id == meta.Id);
             manifest.Mods.Add(meta);
+            try { ReplaceHandInstalledCopies(game, manifest, meta, backupRoot); } catch { /* the install itself worked */ }
             manifest.Save(manifestPath);
             return meta;
         }
@@ -311,6 +315,78 @@ public static class ModInstaller
             }
             CleanEmptyDirs(game, written);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// A copy of the same plugin you added by hand (another folder, or loose in BepInEx\plugins) would leave the mod
+    /// installed twice: BepInEx runs only the newest, and switching one off leaves the other running. Matched by plugin
+    /// ID ([BepInPlugin] GUID), not by name. The hand-installed copy is backed up and removed; a folder that also holds
+    /// other plugins keeps them and loses only the duplicate DLLs.
+    /// </summary>
+    private static void ReplaceHandInstalledCopies(GameInstall game, Manifest manifest, InstalledMod meta, string backupRoot)
+    {
+        var ours = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rel in meta.Files.Where(IsLoadableDll))
+        {
+            var full = SafeJoin(game.Root, rel);
+            var read = File.Exists(full + Pending.NewSuffix) ? full + Pending.NewSuffix : full;
+            foreach (var p in PluginInspector.Read(read)) ours.Add(p.Guid);
+        }
+        if (ours.Count == 0) return;
+        var newNames = meta.Files.Select(BaseDllName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        static string BaseDllName(string path)
+        {
+            var n = Path.GetFileName(path);
+            return n.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase) ? n[..^".disabled".Length] : n;
+        }
+
+        foreach (var (rel, _) in FindUntracked(game, manifest))
+        {
+            var full = SafeJoin(game.Root, rel);
+            var isDir = Directory.Exists(full);
+            var dlls = isDir
+                ? Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories).Where(f => f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".dll.disabled", StringComparison.OrdinalIgnoreCase)).ToList()
+                : new[] { full, full + ".disabled" }.Where(File.Exists).ToList();
+            var plugins = dlls.Select(d => (File: d, Guids: PluginInspector.Read(d).Select(p => p.Guid).ToList())).Where(x => x.Guids.Count > 0).ToList();
+            var dupes = plugins.Where(x => x.Guids.Any(ours.Contains)).ToList();
+            if (dupes.Count == 0) continue;
+            // The whole hand-installed folder is the same mod (every DLL in it is a duplicate plugin or comes with the new
+            // install): replace all of it. Otherwise only the duplicate plugin DLLs go, and everything else stays.
+            var dupeFiles = dupes.Select(x => x.File).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var sameMod = dlls.All(d => dupeFiles.Contains(d) || newNames.Contains(BaseDllName(d)));
+            var targets = isDir && sameMod ? new List<string> { full } : dupes.Select(x => x.File).ToList();
+            foreach (var t in targets)
+            {
+                var tRel = Norm(Path.GetRelativePath(game.Root, t));
+                try
+                {
+                    var bak = SafeJoin(Path.Combine(backupRoot, "hand-installed"), tRel);
+                    if (Directory.Exists(t))
+                    {
+                        CopyDir(t, bak);
+                        Directory.Delete(t, true);
+                    }
+                    else
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(bak)!);
+                        File.Copy(t, bak, true);
+                        File.Delete(t);
+                    }
+                    meta.Replaced.Add(tRel);
+                }
+                catch { meta.NotReplaced.Add(tRel); } // in use (game running) or read-only
+            }
+        }
+    }
+
+    private static void CopyDir(string from, string to)
+    {
+        foreach (var f in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories))
+        {
+            var dest = Path.Combine(to, Path.GetRelativePath(from, f));
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            File.Copy(f, dest, true);
         }
     }
 
@@ -388,6 +464,25 @@ public static class ModInstaller
             else if (entry.EndsWith(".dll.disabled", StringComparison.OrdinalIgnoreCase)) result.Add((rel[..^".disabled".Length], true));
         }
         return result;
+    }
+
+    /// <summary>Name keys (letters and digits, lowercase) of what you added by hand: plugin names, folder and DLL names.</summary>
+    public static HashSet<string> HandInstalledNameKeys(GameInstall game, Manifest manifest)
+    {
+        static string Key(string n) => new string((n ?? "").Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (rel, _) in FindUntracked(game, manifest))
+        {
+            var full = SafeJoin(game.Root, rel);
+            keys.Add(Key(Path.GetFileNameWithoutExtension(rel.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? rel : rel + ".x")));
+            var dlls = Directory.Exists(full)
+                ? Directory.EnumerateFiles(full, "*", SearchOption.AllDirectories).Where(f => f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".dll.disabled", StringComparison.OrdinalIgnoreCase))
+                : new[] { full, full + ".disabled" }.Where(File.Exists);
+            foreach (var d in dlls)
+                foreach (var p in PluginInspector.Read(d)) keys.Add(Key(p.Name));
+        }
+        keys.RemoveWhere(k => k.Length < 4);
+        return keys;
     }
 
     public static void SetUntrackedDisabled(GameInstall game, string rel, bool disabled)
