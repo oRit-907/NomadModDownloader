@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A BepInEx 6 (Unity Mono) preloader patcher that restores the Unity code Nomad Drive's build stripped.
+       Build: uses the BepInEx 6 DLLs from ../BepInEx5Compat/lib/bep6 (see README.md). -->
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>NomadUnityCompat</AssemblyName>
+    <RootNamespace>NomadUnityCompat</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Version>1.0.0</Version>
+    <Company>AkoRit</Company>
+    <DebugType>none</DebugType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <Lib>$(MSBuildThisFileDirectory)../BepInEx5Compat/lib/bep6/</Lib>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="BepInEx.Core" HintPath="$(Lib)BepInEx.Core.dll" Private="false" />
+    <Reference Include="BepInEx.Preloader.Core" HintPath="$(Lib)BepInEx.Preloader.Core.dll" Private="false" />
+    <Reference Include="BepInEx.Unity.Common" HintPath="$(Lib)BepInEx.Unity.Common.dll" Private="false" />
+    <Reference Include="AssetRipper.Primitives" HintPath="$(Lib)AssetRipper.Primitives.dll" Private="false" />
+    <Reference Include="Mono.Cecil" HintPath="$(Lib)Mono.Cecil.dll" Private="false" />
+  </ItemGroup>
+</Project>

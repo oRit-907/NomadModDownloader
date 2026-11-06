@@ -64,6 +64,10 @@ public static class ModLoadDoctor
         public int BepInExMajor { get; init; }                           // 5 or 6
         public bool HasCompat5 { get; init; }                            // BepInEx 6 with the BepInEx 5 compatibility layer
         public Version? NetStandard { get; init; }                       // highest .NET Standard the game can load
+        public bool UnityCompatReady { get; init; }                      // Unity Compatibility installed (restores stripped Unity code)
+        public DateTime? UnityCompatSince { get; init; }                 // when its patcher was installed
+        public Lazy<GameApiScanner.GameApi?> GameApi { get; init; } = new(() => null);
+        public Lazy<GameApiScanner.GameApi?> FullApi { get; init; } = new(() => null);
         public DateTime? LogTime => Report.LogTime;
     }
 
@@ -115,7 +119,32 @@ public static class ModLoadDoctor
         {
             Game = game, Report = report, Loaded = loaded, Enabled = enabled, Disabled = disabled, Assemblies = asm,
             BepInExMajor = major, HasCompat5 = major == 6 && BepInExCompat.IsInstalled(game), NetStandard = ns,
+            UnityCompatReady = UnityCompat.IsInstalled(game),
+            UnityCompatSince = UnityCompat.PatcherInstalled(game) ? File.GetLastWriteTime(UnityCompat.PatcherDll(game)) : null,
+            GameApi = new(() => Directory.Exists(UnityCompat.ManagedDir(game)) ? new GameApiScanner.GameApi(UnityCompat.ManagedDir(game)) : null),
+            FullApi = new(() => UnityCompat.LibsInstalled(game) ? new GameApiScanner.GameApi(UnityCompat.ManagedDir(game), UnityCompat.LibsDir(game)!) : null),
         };
+    }
+
+    /// <summary>What the mod uses that the game's files lack: restorable by Unity Compatibility, or not available at all.</summary>
+    public static (List<GameApiScanner.Missing> Restorable, List<GameApiScanner.Missing> Unavailable) UnityNeeds(Context ctx, IEnumerable<string> dlls)
+    {
+        var restorable = new List<GameApiScanner.Missing>();
+        var unavailable = new List<GameApiScanner.Missing>();
+        var api = ctx.GameApi.Value;
+        if (api == null) return (restorable, unavailable);
+        foreach (var dll in dlls)
+        {
+            List<GameApiScanner.Missing> missing;
+            try { missing = GameApiScanner.Scan(dll, api); } catch { continue; }
+            if (missing.Count == 0) continue;
+            HashSet<string>? still = null;
+            if (ctx.FullApi.Value is { } full)
+                try { still = GameApiScanner.Scan(dll, full).Select(m => m.Assembly + "|" + m.Display).ToHashSet(); } catch { }
+            foreach (var m in missing)
+                (m.IsUnity && (still == null || !still.Contains(m.Assembly + "|" + m.Display)) ? restorable : unavailable).Add(m);
+        }
+        return (restorable, unavailable);
     }
 
     /// <param name="files">The mod's files, relative to the game folder ('/' separated), as the manifest stores them.</param>
@@ -173,6 +202,27 @@ public static class ModLoadDoctor
                 HowToFix = L.T("Open Check BepInEx and set up .NET Standard support."),
             };
 
+        // Unity code Nomad Drive's build stripped (MissingMethodException when the mod calls it).
+        var errors = ctx.Report.Problems.Where(p => p.Level >= ProblemLevel.Error && p.Plugin != null && plugins.Any(x => Same(x, p.Plugin))).ToList();
+        if (started.Count < names.Count || errors.Count > 0)
+        {
+            var (restorable, _) = UnityNeeds(ctx, loadable);
+            if (restorable.Count > 0)
+            {
+                var what = string.Join(", ", restorable.Take(3).Select(m => m.Display.Replace("UnityEngine.", ""))) + (restorable.Count > 3 ? L.F(" and {0} more", restorable.Count - 3) : "");
+                var state = started.Count < names.Count ? LoadState.DidntStart : LoadState.StartedWithErrors;
+                if (!ctx.UnityCompatReady)
+                    return new LoadDiagnosis
+                    {
+                        State = state, Short = L.T("Needs Unity Compatibility"), Fix = LoadFix.OpenChecker, Plugins = names, Files = loadable,
+                        Why = L.F("It uses Unity code that Nomad Drive's build left out: {0}.", what),
+                        HowToFix = L.T("Open Check BepInEx and set up Unity Compatibility. It puts the missing Unity code back when the game starts."),
+                    };
+                if (ctx.UnityCompatSince is { } since && ctx.LogTime is { } lt0 && since > lt0)
+                    return new LoadDiagnosis { State = LoadState.InstalledSince, Short = L.T("Waiting for a game start"), Why = L.T("Unity Compatibility was set up after the game last started, so this mod hasn't had a chance to use it yet."), HowToFix = L.T("Play the game once, then check again."), Fix = LoadFix.Play, Plugins = names, Files = loadable };
+            }
+        }
+
         var newest = loadable.Max(File.GetLastWriteTime);
         if (started.Count < names.Count && ctx.LogTime is { } lt && newest > lt)
             return new LoadDiagnosis { State = LoadState.InstalledSince, Short = L.T("Installed since last start"), Why = L.T("This mod was installed or changed after the game last started."), HowToFix = L.T("Play the game once, then check again."), Fix = LoadFix.Play, Plugins = names, Files = loadable };
@@ -181,7 +231,6 @@ public static class ModLoadDoctor
             && BuiltFor(loadable.SelectMany(References)) == "5")
             return new LoadDiagnosis { State = LoadState.InstalledSince, Short = L.T("Waiting for a game start"), Why = L.T("BepInEx 5 support was added after the game last started, so this BepInEx 5 mod hasn't had a chance to load yet."), HowToFix = L.T("Play the game once, then check again."), Fix = LoadFix.Play, Plugins = names, Files = loadable };
 
-        var errors = ctx.Report.Problems.Where(p => p.Level >= ProblemLevel.Error && p.Plugin != null && plugins.Any(x => Same(x, p.Plugin))).ToList();
         if (started.Count == names.Count)
         {
             if (errors.Count > 0)
@@ -238,6 +287,11 @@ public static class ModLoadDoctor
                 return No(L.T("Installed twice"), said.Title, L.T("A newer copy of this mod is installed and is used instead. Switch this older copy off, or uninstall it."), LoadFix.DisableThis);
             if (said.Detail.Contains("incompatible", StringComparison.OrdinalIgnoreCase))
                 return No(L.T("Clashes with another mod"), said.Title, L.T("These two mods can't run together. Switch one of them off."), LoadFix.DisableThis);
+            if (Regex.IsMatch(said.Title + " " + said.Detail, "Missing(Method|Field)Exception|TypeLoadException")
+                && UnityNeeds(ctx, loadable).Unavailable is { Count: > 0 } gone)
+                return No(L.T("Made for another game version"),
+                    L.F("It uses game code this version of Nomad Drive doesn't have: {0}. The game has probably changed since the mod was made.", string.Join(", ", gone.Take(3).Select(m => m.Display))),
+                    L.T("Check for an update of the mod, or ask its author."), LoadFix.UpdateThis);
             return No(L.T("Error while starting"), said.Title, L.T("Check for an update. If that doesn't help, turn it off and tell its author (Problems has the details to send)."), LoadFix.OpenProblems);
         }
 

@@ -5,3 +5,5 @@ publish/
 .vs/
 mod/NomadModManager/lib/
 mod/NomadModManager/out/
+mod/UnityCompat/out/
+mod/BepInEx5Compat/out/

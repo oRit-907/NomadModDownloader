@@ -22,6 +22,13 @@ Software, and to permit persons to whom the Software is furnished to do so, subj
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of
 the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
 
+## Unity Compatibility (mod/UnityCompat)
+
+The patcher is this project's own code (it uses Mono.Cecil, MIT, which ships with BepInEx). The app doesn't ship
+Unity's libraries: when you set up Unity Compatibility it downloads the ones for your game's Unity version from
+BepInEx's server (https://unity.bepinex.dev/libraries/), the same files BepInEx itself uses, into BepInEx\unity-libs.
+Unity is a trademark of Unity Technologies; its libraries remain under Unity's own terms.
+
 ## Nomad Mod Manager (mod/NomadModManager)
 
 libwebp and libsharpyuv: Copyright (c) Google Inc. BSD 3-Clause License:

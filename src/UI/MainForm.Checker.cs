@@ -140,6 +140,7 @@ internal sealed partial class MainForm
         CheckFix.WriteDoorstop => L.T("Fix doorstop_config.ini"),
         CheckFix.EnableDoorstop => L.T("Switch BepInEx on"),
         CheckFix.InstallDotNetFix => L.T("Set up the .NET fix"),
+        CheckFix.InstallUnityCompat => L.T("Set up Unity Compatibility"),
         CheckFix.EnableDiskLog => L.T("Switch the log on"),
         CheckFix.Unblock => L.T("Unblock files"),
         CheckFix.RemoveMelonLoader => L.T("Move MelonLoader away"),
@@ -217,10 +218,19 @@ internal sealed partial class MainForm
             // Ordered so a doorstop rewrite happens before the .NET fix updates it.
             foreach (var i in rest.OrderBy(i => i.Fix == CheckFix.InstallDotNetFix ? 1 : 0))
             {
+                if (i.Fix == CheckFix.InstallUnityCompat) continue; // downloads: below
+
                 // A reinstall above already wrote a fresh doorstop_config.ini and the .NET fix.
                 if (bep != null && i.Fix is CheckFix.WriteDoorstop or CheckFix.EnableDoorstop or CheckFix.InstallCompat) continue;
                 var msg = BepInExChecker.Apply(i, game);
                 if (msg.Length > 0) done.Add(msg);
+            }
+            if (rest.Any(i => i.Fix == CheckFix.InstallUnityCompat) && !(bep != null && UnityCompat.IsInstalled(game) && !UnityCompat.IsOutdated(game)))
+            {
+                SetStatus(L.T("Setting up Unity Compatibility…"));
+                var uw = await UnityCompat.InstallAsync(_http, game, Progress(), _closing.Token);
+                HideProgress();
+                done.Add(L.F("Set up Unity Compatibility ({0} item(s)). It finishes on the next game start.", uw.Count));
             }
         }
         catch (Exception ex)

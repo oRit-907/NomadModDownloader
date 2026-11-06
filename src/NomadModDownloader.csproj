@@ -12,7 +12,7 @@
     <AssemblyName>NomadModDownloader</AssemblyName>
     <RootNamespace>NomadModDownloader</RootNamespace>
     <Product>Nomad Mod Downloader</Product>
-    <Version>2.6.1</Version>
+    <Version>2.6.2</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationVisualStyles>true</ApplicationVisualStyles>
@@ -35,6 +35,7 @@
     <EmbeddedResource Include="Assets\DotNetFix.zip" LogicalName="Assets.DotNetFix.zip" />
     <!-- BepInEx 5 Compatibility (mod/BepInEx5Compat) + BepInEx 5's runtime (MIT): runs BepInEx 5 mods on BepInEx 6. -->
     <EmbeddedResource Include="Assets\BepInEx5Compat.zip" LogicalName="Assets.BepInEx5Compat.zip" />
+    <EmbeddedResource Include="Assets\UnityCompat.zip" LogicalName="Assets.UnityCompat.zip" />
   </ItemGroup>
 
   <ItemGroup>

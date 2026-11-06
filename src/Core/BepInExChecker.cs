@@ -19,6 +19,7 @@ public enum CheckFix
     WriteDoorstop,      // write a working doorstop_config.ini
     EnableDoorstop,
     InstallDotNetFix,   // Nomad Drive's full .NET libraries + point doorstop at them
+    InstallUnityCompat, // restore the Unity code the game's build stripped (downloads Unity's libraries; UI flow)
     EnableDiskLog,
     Unblock,            // remove the "downloaded from the internet" mark
     RemoveMelonLoader,  // moved to a backup, not deleted
@@ -198,6 +199,31 @@ public static class BepInExChecker
                 CheckFix.InstallDotNetFix);
         else
             Add(AreaNomad, CheckLevel.Ok, needs21.Count > 0 ? L.F(".NET Standard 2.1 is supported ({0} mod(s) use it).", needs21.Count) : L.T(".NET Standard 2.1 is supported."));
+
+        // Unity Compatibility: the game's Unity files are stripped, so mods calling Unity code the game never uses fail.
+        if (major == 6 && status.State != BepInExState.NotInstalled)
+        {
+            List<UnityCompat.ModNeed> needs;
+            try { needs = UnityCompat.ScanMods(game); } catch { needs = new(); }
+            var fixable = needs.Where(n => n.Restorable.Count > 0).ToList();
+            string ListMods(IEnumerable<UnityCompat.ModNeed> mods, Func<UnityCompat.ModNeed, List<GameApiScanner.Missing>> pick) =>
+                string.Join("\n", mods.Take(10).Select(n => "• " + n.Mod + ": " + string.Join(", ", pick(n).Take(3).Select(m => m.Display.Replace("UnityEngine.", ""))) + (pick(n).Count > 3 ? L.F(" and {0} more", pick(n).Count - 3) : "")));
+            if (!UnityCompat.IsInstalled(game))
+                Add(AreaNomad, fixable.Count > 0 ? CheckLevel.Error : CheckLevel.Warning, L.T("Unity Compatibility isn't set up."),
+                    (fixable.Count > 0 ? L.F("{0} of your mods use Unity code that Nomad Drive's build left out, so they fail with \"Method not found\":\n", fixable.Count) + ListMods(fixable, n => n.Restorable) + "\n\n" : "") +
+                    L.T("Nomad Drive's Unity files only contain the parts the game itself uses. Unity Compatibility puts the rest back when the game starts, from Unity's own libraries for the same Unity version (downloaded from BepInEx's server, about 2.5 MB). It only adds what's missing; the game's own code stays as it is."),
+                    CheckFix.InstallUnityCompat);
+            else if (UnityCompat.IsOutdated(game))
+                Add(AreaNomad, CheckLevel.Info, L.T("A newer Unity Compatibility is available."), L.F("You have {0}; this app has {1}.", UnityCompat.Installed(game), UnityCompat.Bundled()), CheckFix.InstallUnityCompat);
+            else
+                Add(AreaNomad, CheckLevel.Ok, (UnityCompat.IsBuilt(game) ? L.T("Unity Compatibility is set up.") : L.T("Unity Compatibility is set up. It finishes on the next game start."))
+                    + (fixable.Count > 0 ? " " + L.F("({0} mod(s) use it.)", fixable.Count) : ""));
+            var gone = needs.Where(n => n.Unavailable.Count > 0).ToList();
+            if (gone.Count > 0)
+                Add(AreaMods, CheckLevel.Info, L.F("{0} mod(s) use game code this version of Nomad Drive doesn't have.", gone.Count),
+                    ListMods(gone, n => n.Unavailable) + "\n\n" + L.T("These mods were probably made for an older or newer version of the game. They may still work if they don't reach that code; if one misbehaves, look for an update."),
+                    CheckFix.OpenInstalled);
+        }
 
         var crashLogs = Directory.EnumerateFiles(game.Root, "preloader_*.log").ToList();
         if (crashLogs.Count > 0)
@@ -494,7 +520,8 @@ public static class BepInExChecker
     {
         var needsFix = CorlibIsStripped(GameCorlib(game)) == true;
         var major = BepInExManager.MajorOf(game);
-        var search = major == 6 ? (needsFix ? "\"" + DotNetFixFolder + ";BepInEx\\core\"" : "\"BepInEx\\core\"") : needsFix ? DotNetFixFolder : "";
+        var compat = major == 6 && UnityCompat.PatcherInstalled(game) ? UnityCompat.CompatFolder + ";" : "";
+        var search = major == 6 ? (needsFix ? "\"" + DotNetFixFolder + ";" + compat + "BepInEx\\core\"" : "\"" + compat + "BepInEx\\core\"") : needsFix ? DotNetFixFolder : "";
         var text = "# Written by Nomad Mod Downloader\r\n[General]\r\n\r\n# Enable Doorstop?\r\nenabled = true\r\n\r\n# Path to the assembly to load and execute\r\ntarget_assembly = " + PreloaderFor(major) + "\r\n\r\n" +
                    "redirect_output_log = false\r\n\r\nboot_config_override =\r\n\r\nignore_disable_switch = false\r\n\r\n[UnityMono]\r\n\r\n" +
                    (needsFix ? "# Nomad Drive's mscorlib is stripped: use the full Mono libraries\r\n" : "") + "dll_search_path_override = " + search +

@@ -208,6 +208,14 @@ public static class BepInExManager
         // BepInEx 6 can't load BepInEx 5 mods by itself: add the compatibility layer. Back on BepInEx 5 it isn't needed.
         if (MajorOf(game) == 6) written.AddRange(BepInExCompat.Install(game));
         else BepInExCompat.Remove(game);
+        // BepInEx 6: restore the Unity code the game's build stripped. A failed download doesn't fail the install;
+        // Check BepInEx offers it again.
+        if (MajorOf(game) == 6)
+        {
+            try { written.AddRange(await UnityCompat.InstallAsync(http, game, null, ct)); }
+            catch (Exception) when (!ct.IsCancellationRequested) { }
+        }
+        else UnityCompat.Remove(game);
         return written;
     }
 
