@@ -1,0 +1,91 @@
+# Builds the Microsoft Store (MSIX) package of Nomad Mod Downloader.
+#
+# Run it from Actions > Store package > Run workflow, or push a branch named store/<anything>.
+# It makes two downloads (under the run's Artifacts):
+#   - NomadModDownloader-X.Y.Z.0-x64.msix: upload this in Partner Center (the Store signs it, so it isn't signed here).
+#   - NomadModDownloader-X.Y.Z.0-layout.zip: the unpacked package, to try on your own PC first:
+#       turn on Developer Mode (Settings > System > For developers), unzip it, then in PowerShell in that folder:
+#       Add-AppxPackage -Register .\AppxManifest.xml
+#     (remove it again with: Get-AppxPackage *NomadModDownloader* | Remove-AppxPackage)
+#
+# The Store identity comes from the repository variables STORE_IDENTITY_NAME, STORE_PUBLISHER and
+# STORE_PUBLISHER_DISPLAY_NAME (Settings > Secrets and variables > Actions > Variables), copied from
+# Partner Center > the app > Product identity. Without them it builds with test values, fine for trying it but not for upload.
+name: Store package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['store/*']
+
+permissions:
+  contents: write
+
+jobs:
+  msix:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build the app
+        shell: pwsh
+        run: |
+          dotnet publish src/NomadModDownloader.csproj -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=false -p:EnableCompressionInSingleFile=false -o layout
+          if (-not (Test-Path layout/NomadModDownloader.exe)) { throw "The publish didn't make NomadModDownloader.exe" }
+
+      - name: Make the package
+        shell: pwsh
+        env:
+          STORE_IDENTITY_NAME: ${{ vars.STORE_IDENTITY_NAME }}
+          STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+          STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [xml]$proj = Get-Content src/NomadModDownloader.csproj
+          $ver = ($proj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          if (-not $ver) { throw "No <Version> in the csproj" }
+          $pkgVer = "$ver.0"
+          $name = if ($env:STORE_IDENTITY_NAME) { $env:STORE_IDENTITY_NAME } else { "NomadModDownloader.Test" }
+          $pub = if ($env:STORE_PUBLISHER) { $env:STORE_PUBLISHER } else { "CN=NomadModDownloaderTest" }
+          $pubName = if ($env:STORE_PUBLISHER_DISPLAY_NAME) { $env:STORE_PUBLISHER_DISPLAY_NAME } else { "Nomad Mod Downloader (test build)" }
+          if (-not $env:STORE_IDENTITY_NAME) { Write-Host "::warning::STORE_* variables aren't set: this package uses test values and can't be uploaded to the Store." }
+
+          $m = Get-Content src/Package/AppxManifest.xml -Raw
+          $m = $m.Replace('$STORE_IDENTITY_NAME$', [Security.SecurityElement]::Escape($name)).Replace('$STORE_PUBLISHER$', [Security.SecurityElement]::Escape($pub))
+          $m = $m.Replace('$STORE_PUBLISHER_DISPLAY_NAME$', [Security.SecurityElement]::Escape($pubName)).Replace('$VERSION$', $pkgVer)
+          Set-Content layout/AppxManifest.xml $m -Encoding utf8
+          Copy-Item src/Package/Assets layout/Assets -Recurse
+
+          $kit = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $makeappx = Join-Path $kit.FullName makeappx.exe
+          $makepri = Join-Path $kit.FullName makepri.exe
+          Write-Host "Using $($kit.FullName)"
+
+          # resources.pri: picks the right logo size for each screen scale.
+          & $makepri createconfig /cf priconfig.xml /dq en-US /o
+          if ($LASTEXITCODE) { throw "makepri createconfig failed" }
+          & $makepri new /pr layout /cf priconfig.xml /mn layout/AppxManifest.xml /of layout/resources.pri /o
+          if ($LASTEXITCODE) { throw "makepri new failed" }
+
+          New-Item -ItemType Directory out | Out-Null
+          & $makeappx pack /d layout /p "out/NomadModDownloader-$pkgVer-x64.msix" /o
+          if ($LASTEXITCODE) { throw "makeappx pack failed" }
+          Compress-Archive -Path layout/* -DestinationPath "out/NomadModDownloader-$pkgVer-layout.zip"
+          "PKGVER=$pkgVer" | Out-File $env:GITHUB_ENV -Append
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NomadModDownloader-${{ env.PKGVER }}-store
+          path: out/*
+
+      - name: Remove the store/ branch
+        if: startsWith(github.ref, 'refs/heads/store/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: git push origin --delete "${{ github.ref_name }}"

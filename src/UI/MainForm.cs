@@ -503,9 +503,12 @@ internal sealed partial class MainForm : Form
         };
         _log.HandleCreated += (_, _) => Theme.DarkScrollbars(_log);
         var bar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, WrapContents = false, Padding = new Padding(0, 0, 0, 12) };
-        var check = Theme.Button(L.T("Check for app updates"));
-        check.Click += async (_, _) => await RunExclusive(() => CheckForAppUpdateAsync(silent: false));
-        bar.Controls.Add(check);
+        if (!StoreApp.IsPackaged) // the Store keeps its own build up to date
+        {
+            var check = Theme.Button(L.T("Check for app updates"));
+            check.Click += async (_, _) => await RunExclusive(() => CheckForAppUpdateAsync(silent: false));
+            bar.Controls.Add(check);
+        }
         bar.Controls.Add(new Label { Text = L.F("Version {0}", Updater.Current.ToString(3)), AutoSize = true, ForeColor = Theme.Muted, Font = Theme.Small, BackColor = Color.Transparent, Margin = new Padding(8, 9, 0, 0) });
         page.Controls.Add(_log);
         page.Controls.Add(bar);
@@ -720,6 +723,7 @@ internal sealed partial class MainForm : Form
     /// <param name="silent">At startup: say nothing unless there's an update.</param>
     private async Task CheckForAppUpdateAsync(bool silent)
     {
+        if (StoreApp.IsPackaged) return; // updated by the Microsoft Store
         var updater = new Updater(_http) { Token = _settings.GetGitHubToken() };
         if (!silent) SetStatus(L.T("Checking for app updates…"));
         var (result, info, error) = await updater.CheckAsync(_closing.Token);

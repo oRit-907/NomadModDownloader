@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Microsoft Store (MSIX) package for Nomad Mod Downloader. Built by .github/workflows/store.yml.
+
+  The three STORE_* values below come from Partner Center (Apps and games > the app > Product identity):
+    Package/Identity/Name, Package/Identity/Publisher and Package/Properties/PublisherDisplayName.
+  They must match exactly or the Store rejects the upload. Until they're filled in, the build uses test values
+  that are fine for trying the package on your own PC (Developer Mode) but can't be uploaded.
+  The version is taken from NomadModDownloader.csproj (X.Y.Z becomes X.Y.Z.0; the Store needs the last part to be 0).
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop rescap">
+
+  <Identity Name="$STORE_IDENTITY_NAME$" Publisher="$STORE_PUBLISHER$" Version="$VERSION$" ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Nomad Mod Downloader</DisplayName>
+    <PublisherDisplayName>$STORE_PUBLISHER_DISPLAY_NAME$</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="NomadModDownloader" Executable="NomadModDownloader.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Nomad Mod Downloader"
+        Description="Find, install and manage Nomad Drive mods from Nexus Mods, and set up BepInEx."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+      </uap:VisualElements>
+      <Extensions>
+        <!-- Lets the in-game Mods menu start the app (the exe inside WindowsApps can't be started directly). -->
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="NomadModDownloader.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="NomadModDownloader.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

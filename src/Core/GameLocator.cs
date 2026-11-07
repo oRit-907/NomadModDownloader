@@ -54,7 +54,12 @@ public sealed class GameInstall
             var dir = Path.Combine(BepInExDir, "NomadModManager");
             Directory.CreateDirectory(dir);
             var file = Path.Combine(dir, "downloader.txt");
-            var exe = Environment.ProcessPath ?? "";
+            var exe = StoreApp.LaunchPath;
+            // The Store build is started through an alias the Mods menu can't read a version from, so say it here.
+            var ver = Path.Combine(dir, "downloader-version.txt");
+            var v = Updater.Current.ToString(3);
+            if (StoreApp.IsPackaged) { if (!File.Exists(ver) || File.ReadAllText(ver).Trim() != v) File.WriteAllText(ver, v); }
+            else if (File.Exists(ver)) File.Delete(ver);
             if (exe.Length == 0 || (File.Exists(file) && File.ReadAllText(file).Trim() == exe)) return;
             File.WriteAllText(file, exe);
         }

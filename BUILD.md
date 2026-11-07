@@ -32,3 +32,13 @@ The app is written to `src/publish/NomadModDownloader.exe`. It's deliberately no
 - Noto Sans font: SIL Open Font License, see `src/Art/OFL.txt`.
 - The Discord icon is used only to link to the Nomad Drive Discord server.
 - Nomad Drive's menu art is not included. The app reads it from each player's own game install.
+
+## Microsoft Store package
+
+`.github/workflows/store.yml` builds the MSIX for the Microsoft Store (Actions > Store package > Run workflow).
+The manifest is `src/Package/AppxManifest.xml` and the logos are in `src/Package/Assets`.
+Set the repository variables `STORE_IDENTITY_NAME`, `STORE_PUBLISHER` and `STORE_PUBLISHER_DISPLAY_NAME`
+from Partner Center (the app > Product identity) before building one to upload.
+
+The Store build (`StoreApp.IsPackaged`) doesn't update itself (the Store does), and it tells the in-game
+Mods menu to start it through its app execution alias, writing its version to `downloader-version.txt`.

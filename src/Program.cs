@@ -72,12 +72,14 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
         NomadModDownloader.UI.Theme.Init();
-        Updater.CleanUpAfterUpdate(); // remove the previous version's exe after an update
-
-        // The update screen: checks for a new version first, and restarts into it if there is one.
-        var appChecked = false;
-        using (var splash = new NomadModDownloader.UI.UpdateScreen())
+        // The Microsoft Store build is updated by the Store, not by the app.
+        var appChecked = StoreApp.IsPackaged;
+        if (!StoreApp.IsPackaged)
         {
+            Updater.CleanUpAfterUpdate(); // remove the previous version's exe after an update
+
+            // The update screen: checks for a new version first, and restarts into it if there is one.
+            using var splash = new NomadModDownloader.UI.UpdateScreen();
             Application.Run(splash);
             if (splash.Restarting) return;
             appChecked = splash.Checked;

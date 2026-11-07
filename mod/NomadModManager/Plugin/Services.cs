@@ -347,9 +347,17 @@ namespace NomadModManager
             try
             {
                 var v = FileVersionInfo.GetVersionInfo(exe);
-                return new Version(v.FileMajorPart, v.FileMinorPart, v.FileBuildPart);
+                if (v.FileMajorPart > 0 || v.FileMinorPart > 0) return new Version(v.FileMajorPart, v.FileMinorPart, v.FileBuildPart);
             }
-            catch { return null; }
+            catch { }
+            // The Microsoft Store build is started through an alias (no version in it): the app writes its version next to downloader.txt.
+            try
+            {
+                var f = Path.Combine(Pending.Dir(Paths.GameRootPath), "downloader-version.txt");
+                if (exe.IndexOf("WindowsApps", StringComparison.OrdinalIgnoreCase) >= 0 && File.Exists(f)) return new Version(File.ReadAllText(f).Trim());
+            }
+            catch { }
+            return null;
         }
 
         /// <summary>The downloader is there but too old to open a mod for the game.</summary>
@@ -374,6 +382,10 @@ namespace NomadModManager
                 Path.Combine(local, "Programs"), Path.Combine(Path.Combine(local, "Programs"), "NomadModDownloader"), Environment.GetEnvironmentVariable("ProgramFiles") ?? "", Paths.GameRootPath
             })
                 if (r.Length > 0 && Directory.Exists(r)) roots.Add(r);
+
+            // The Microsoft Store build's alias
+            var alias = Path.Combine(Path.Combine(Path.Combine(local, "Microsoft"), "WindowsApps"), "NomadModDownloader.exe");
+            if (local.Length > 0 && File.Exists(alias)) return alias;
 
             string best = null; Version bestV = null;
             foreach (var root in roots)
