@@ -895,6 +895,26 @@ internal sealed partial class MainForm : Form
         }
     }
 
+    /// <summary>Shows one mod's page in Browse (adding it to the list if the current search doesn't have it).</summary>
+    private async Task OpenModPageAsync(int modId)
+    {
+        ShowPage("Browse mods");
+        var item = _modList.Items.Cast<ListViewItem>().FirstOrDefault(i => i.Tag is ModInfo m && m.ModId == modId);
+        if (item == null)
+        {
+            ModInfo? mod = null;
+            try { mod = await _api.GetModAsync(modId, _closing.Token); } catch { }
+            if (mod == null) { SetStatus(L.T("Couldn't open that mod's page.")); return; }
+            item = new ListViewItem(mod.Name) { Tag = mod };
+            for (var i = 0; i < _modList.Columns.Count - 1; i++) item.SubItems.Add("");
+            _modList.Items.Insert(0, item);
+        }
+        _modList.SelectedItems.Clear();
+        item.Selected = true;
+        item.Focused = true;
+        item.EnsureVisible();
+    }
+
     private async Task ShowModAsync()
     {
         if (_modList.SelectedItems.Count == 0 || _modList.SelectedItems[0].Tag is not ModInfo mod) return;
@@ -976,6 +996,12 @@ internal sealed partial class MainForm : Form
         _showOld.Text = L.F("Show older versions ({0})", old.Count);
 
         var idx = keep == null ? -1 : _files.Items.Cast<ModFileInfo>().ToList().FindIndex(f => f.FileId == keep);
+        // The in-game Mods menu comes in a BepInEx 5 and a BepInEx 6 build: pick the one for this game's BepInEx.
+        if (idx < 0 && _selectedMod?.ModId == SelfModId && _game != null)
+        {
+            var major = BepInExManager.MajorOf(_game) is 5 ? 5 : 6;
+            idx = _files.Items.Cast<ModFileInfo>().ToList().FindIndex(f => IsInGameMenuFile(f) && GameInstall.MenuFileMajor(f.Name) == major);
+        }
         if (_files.Items.Count > 0) _files.SelectedIndex = idx >= 0 ? idx : 0;
         else _fileInfo.Text = L.T("This mod has no downloadable files.");
         _installButton.Enabled = _files.Items.Count > 0 && (_selectedMod?.ModId != SelfModId || IsInGameMenuFile(_files.SelectedItem as ModFileInfo));

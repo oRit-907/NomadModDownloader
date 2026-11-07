@@ -150,7 +150,7 @@ namespace NomadModManager
                 m.InUse = m.Dlls.Concat(m.OffDlls.Select(d => d.Substring(0, d.Length - Pending.OffSuffix.Length))).Any(d => loadedPaths.Contains(d));
 
                 // Plugins running from this entry
-                foreach (var info in Chainloader.PluginInfos.Values)
+                foreach (var info in Bep.Plugins.Values)
                 {
                     if (info?.Location == null || info.Instance == null) continue;
                     var loc = Path.GetFullPath(info.Location);

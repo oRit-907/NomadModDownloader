@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The BepInEx 6 preloader patcher: applies queued mod changes before plugins load. -->
+  <PropertyGroup>
+    <AssemblyName>NomadModManager.Patcher</AssemblyName>
+    <RootNamespace>NomadModManager</RootNamespace>
+    <Lib6>$(MSBuildThisFileDirectory)../../BepInEx5Compat/lib/bep6/</Lib6>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/*.cs" />
+    <Reference Include="BepInEx.Core" HintPath="$(Lib6)BepInEx.Core.dll" Private="false" />
+    <Reference Include="BepInEx.Preloader.Core" HintPath="$(Lib6)BepInEx.Preloader.Core.dll" Private="false" />
+    <Reference Include="Mono.Cecil" HintPath="$(Lib6)Mono.Cecil.dll" Private="false" />
+  </ItemGroup>
+</Project>

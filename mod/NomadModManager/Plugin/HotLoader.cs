@@ -5,6 +5,9 @@ using System.Linq;
 using System.Reflection;
 using BepInEx;
 using BepInEx.Bootstrap;
+#if BEPINEX6
+using BepInEx.Unity.Mono;
+#endif
 using Mono.Cecil;
 using UnityEngine;
 
@@ -44,13 +47,24 @@ namespace NomadModManager
 
             using (asm)
             {
-                if (!asm.MainModule.AssemblyReferences.Any(r => r.Name == "BepInEx"))
+                var refs = asm.MainModule.AssemblyReferences.Select(r => r.Name).ToList();
+#if BEPINEX6
+                // A BepInEx 5 mod runs through BepInEx 5 Compatibility, which only starts mods at game start.
+                if (refs.Contains("BepInEx") && !refs.Contains("BepInEx.Core"))
+                {
+                    v.Reason = "BepInEx 5 mod (starts after a restart)";
+                    return v;
+                }
+                if (!refs.Contains("BepInEx.Core") && !refs.Contains("BepInEx.Unity.Mono"))
+#else
+                if (!refs.Contains("BepInEx"))
+#endif
                 {
                     v.NotAPlugin = true;
                     v.Reason = "Support library";
                     return v;
                 }
-                if (asm.MainModule.AssemblyReferences.Any(r => r.Name == "BepInEx.Preloader") || HasPatcherEntry(asm))
+                if (refs.Contains("BepInEx.Preloader") || refs.Contains("BepInEx.Preloader.Core") || HasPatcherEntry(asm))
                 {
                     v.Reason = "Preloader patcher";
                     return v;
@@ -59,7 +73,7 @@ namespace NomadModManager
                 foreach (var t in asm.MainModule.Types)
                 {
                     PluginInfo info = null;
-                    try { info = Chainloader.ToPluginInfo(t); } catch { }
+                    try { info = Bep.ToPluginInfo(t, dll); } catch { }
                     if (info == null) continue;
                     SetProp(info, "Location", dll);
                     v.Plugins.Add(info);
@@ -81,20 +95,20 @@ namespace NomadModManager
                     {
                         v.WrongGame = true; v.Reason = "Made for a different game"; return v;
                     }
-                    if (Chainloader.PluginInfos.ContainsKey(p.Metadata.GUID))
+                    if (Bep.Plugins.ContainsKey(p.Metadata.GUID))
                     {
                         v.Reason = "Replaces a mod that's already running"; return v;
                     }
                     foreach (var d in p.Dependencies.Where(d => (d.Flags & BepInDependency.DependencyFlags.HardDependency) != 0))
                     {
                         if (batch.Contains(d.DependencyGUID)) continue;
-                        if (!Chainloader.PluginInfos.TryGetValue(d.DependencyGUID, out var have) || have.Instance == null)
+                        if (!Bep.Plugins.TryGetValue(d.DependencyGUID, out var have) || have.Instance == null)
                         { v.Reason = "Needs " + d.DependencyGUID + ", which isn't loaded"; return v; }
-                        if (d.MinimumVersion != null && have.Metadata.Version < d.MinimumVersion)
+                        if (!Bep.VersionOk(d, have))
                         { v.Reason = "Needs a newer " + have.Metadata.Name; return v; }
                     }
                     foreach (var inc in p.Incompatibilities)
-                        if (Chainloader.PluginInfos.ContainsKey(inc.IncompatibilityGUID))
+                        if (Bep.Plugins.ContainsKey(inc.IncompatibilityGUID))
                         { v.Reason = "Conflicts with " + inc.IncompatibilityGUID; return v; }
                 }
 
@@ -123,7 +137,7 @@ namespace NomadModManager
             HookResolver();
             var started = new List<string>();
             var asm = Assembly.LoadFrom(v.Dll);
-            var host = Chainloader.ManagerObject;
+            var host = Bep.Manager;
             if (host == null)
             {
                 host = new GameObject("NomadModManager_HotLoaded");
@@ -133,7 +147,7 @@ namespace NomadModManager
             foreach (var info in Order(v.Plugins))
             {
                 var type = asm.GetType(GetProp<string>(info, "TypeName"), true);
-                Chainloader.PluginInfos[info.Metadata.GUID] = info;
+                Bep.Plugins[info.Metadata.GUID] = info;
                 try
                 {
                     var instance = (BaseUnityPlugin)host.AddComponent(type);
@@ -142,7 +156,7 @@ namespace NomadModManager
                 }
                 catch
                 {
-                    Chainloader.PluginInfos.Remove(info.Metadata.GUID);
+                    Bep.Plugins.Remove(info.Metadata.GUID);
                     throw;
                 }
             }

@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The BepInEx 6 build of the Mods menu: the same sources as ../Plugin, built against BepInEx 6. -->
+  <PropertyGroup>
+    <DefineConstants>$(DefineConstants);BEPINEX6</DefineConstants>
+    <Lib6>$(MSBuildThisFileDirectory)../../BepInEx5Compat/lib/bep6/</Lib6>
+    <AssemblyName>NomadModManager</AssemblyName>
+    <RootNamespace>NomadModManager</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/*.cs" />
+    <Compile Include="../Plugin/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="BepInEx.Core" HintPath="$(Lib6)BepInEx.Core.dll" Private="false" />
+    <Reference Include="BepInEx.Unity.Mono" HintPath="$(Lib6)BepInEx.Unity.Mono.dll" Private="false" />
+    <Reference Include="SemanticVersioning" HintPath="$(Lib6)SemanticVersioning.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(Lib6)0Harmony.dll" Private="false" />
+    <Reference Include="Mono.Cecil" HintPath="$(Lib6)Mono.Cecil.dll" Private="false" />
+    <Reference Include="Newtonsoft.Json" HintPath="$(Lib)Newtonsoft.Json.dll" Private="false" />
+    <Reference Include="EvilCore.UI" HintPath="$(Lib)EvilCore.UI.dll" Private="false" />
+    <Reference Include="Unity.TextMeshPro" HintPath="$(Lib)Unity.TextMeshPro.dll" Private="false" />
+    <Reference Include="UnityEngine" HintPath="$(Lib)UnityEngine.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(Lib)UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="UnityEngine.IMGUIModule" HintPath="$(Lib)UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="UnityEngine.UI" HintPath="$(Lib)UnityEngine.UI.dll" Private="false" />
+    <Reference Include="UnityEngine.UIModule" HintPath="$(Lib)UnityEngine.UIModule.dll" Private="false" />
+    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(Lib)UnityEngine.TextRenderingModule.dll" Private="false" />
+    <Reference Include="UnityEngine.UnityWebRequestModule" HintPath="$(Lib)UnityEngine.UnityWebRequestModule.dll" Private="false" />
+    <Reference Include="UnityEngine.ImageConversionModule" HintPath="$(Lib)UnityEngine.ImageConversionModule.dll" Private="false" />
+    <Reference Include="Unity.InputSystem" HintPath="$(Lib)Unity.InputSystem.dll" Private="false" />
+    <Reference Include="UnityEngine.InputLegacyModule" HintPath="$(Lib)UnityEngine.InputLegacyModule.dll" Private="false" />
+  </ItemGroup>
+</Project>

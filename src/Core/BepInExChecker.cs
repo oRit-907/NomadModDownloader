@@ -19,6 +19,7 @@ public enum CheckFix
     WriteDoorstop,      // write a working doorstop_config.ini
     EnableDoorstop,
     InstallDotNetFix,   // Nomad Drive's full .NET libraries + point doorstop at them
+    OpenModsMenuPage,   // show the in-game Mods menu's files (on this app's Nexus page) in Browse
     InstallUnityCompat, // restore the Unity code the game's build stripped (downloads Unity's libraries; UI flow)
     EnableDiskLog,
     Unblock,            // remove the "downloaded from the internet" mark
@@ -199,6 +200,17 @@ public static class BepInExChecker
                 CheckFix.InstallDotNetFix);
         else
             Add(AreaNomad, CheckLevel.Ok, needs21.Count > 0 ? L.F(".NET Standard 2.1 is supported ({0} mod(s) use it).", needs21.Count) : L.T(".NET Standard 2.1 is supported."));
+
+        // The in-game Mods menu has a build per BepInEx version.
+        if (status.State != BepInExState.NotInstalled && game.ModManagerMajor is { } menuMajor && menuMajor != major)
+        {
+            if (menuMajor == 6)
+                Add(AreaMods, CheckLevel.Error, L.T("The in-game Mods menu is the BepInEx 6 version, but the game has BepInEx 5."),
+                    L.T("It won't load on BepInEx 5. Install the BepInEx 5 version of the Mods menu: Browse > Nomad Mod Downloader > the \"BepInEx 5\" file."), CheckFix.OpenModsMenuPage);
+            else
+                Add(AreaMods, CheckLevel.Warning, L.T("The in-game Mods menu is the BepInEx 5 version."),
+                    L.T("It still runs on BepInEx 6, but changes you make in it while the game is running (updates, removals, switching mods on and off) aren't applied at the next start. Install the BepInEx 6 version: Browse > Nomad Mod Downloader > the \"BepInEx 6\" file."), CheckFix.OpenModsMenuPage);
+        }
 
         // Unity Compatibility: the game's Unity files are stripped, so mods calling Unity code the game never uses fail.
         if (major == 6 && status.State != BepInExState.NotInstalled)

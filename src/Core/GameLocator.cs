@@ -18,6 +18,28 @@ public sealed class GameInstall
     public bool HasModManager => File.Exists(Path.Combine(BepInExDir, "patchers", "NomadModManager.Patcher.dll"))
                                  && Directory.EnumerateFiles(PluginsDir, "NomadModManager.dll", SearchOption.AllDirectories).Any();
 
+    /// <summary>Which BepInEx the installed in-game Mods menu was built for (5 or 6), or null if it isn't installed.</summary>
+    public int? ModManagerMajor
+    {
+        get
+        {
+            try
+            {
+                var dll = Directory.EnumerateFiles(PluginsDir, "NomadModManager.dll", SearchOption.AllDirectories).FirstOrDefault();
+                if (dll == null) return null;
+                using var pe = new System.Reflection.PortableExecutable.PEReader(File.OpenRead(dll));
+                var md = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(pe);
+                var refs = md.AssemblyReferences.Select(h => md.GetString(md.GetAssemblyReference(h).Name)).ToList();
+                return refs.Contains("BepInEx.Core") ? 6 : refs.Contains("BepInEx") ? 5 : null;
+            }
+            catch { return null; }
+        }
+    }
+
+    /// <summary>The in-game Mods menu file on Nexus for a BepInEx version: its name says "BepInEx 6" (or 5); older files are BepInEx 5.</summary>
+    public static int MenuFileMajor(string fileName) =>
+        System.Text.RegularExpressions.Regex.IsMatch(fileName ?? "", @"BepInEx\s*6|\bBE\s*6\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase) ? 6 : 5;
+
     /// <summary>Running, and without the in-game Mods menu to take over: installs have to wait.</summary>
     public bool BlocksInstall() => IsRunning() && !SafeHasModManager();
 

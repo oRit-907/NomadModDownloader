@@ -6,6 +6,9 @@ using System.Linq;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
+#if BEPINEX6
+using BepInEx.Unity.Mono;
+#endif
 using EvilCore.UI.MainMenu.Panels;
 using HarmonyLib;
 using TMPro;
@@ -20,7 +23,7 @@ namespace NomadModManager
     public class ModManagerPlugin : BaseUnityPlugin
     {
         public const string Guid = "akorit.nomadmodmanager";
-        public const string Version = "1.0.3";
+        public const string Version = "1.0.4";
 
         internal static ModManagerPlugin I;
         internal static ManualLogSource Log;

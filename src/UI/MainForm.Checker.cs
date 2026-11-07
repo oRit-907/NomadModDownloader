@@ -137,6 +137,7 @@ internal sealed partial class MainForm
         CheckFix.UpgradeToBepInEx6 => L.T("Upgrade to BepInEx 6"),
         CheckFix.InstallCompat => L.T("Install BepInEx 5 support"),
         CheckFix.OpenInstalled => L.T("Open Installed"),
+        CheckFix.OpenModsMenuPage => L.T("Get the right Mods menu"),
         CheckFix.WriteDoorstop => L.T("Fix doorstop_config.ini"),
         CheckFix.EnableDoorstop => L.T("Switch BepInEx on"),
         CheckFix.InstallDotNetFix => L.T("Set up the .NET fix"),
@@ -161,6 +162,7 @@ internal sealed partial class MainForm
 
         if (items.Count == 1 && items[0].Fix == CheckFix.OpenProblems) { ShowPage("Problems"); return; }
         if (items.Count == 1 && items[0].Fix == CheckFix.OpenInstalled) { ShowPage("Installed"); return; }
+        if (items.Count == 1 && items[0].Fix == CheckFix.OpenModsMenuPage) { await OpenModPageAsync(SelfModId); return; }
         if (items.Count == 1 && items[0].Fix == CheckFix.Play) { await PlayAsync(vanilla: false); return; }
         items = items.Where(i => i.FileFix).ToList();
         if (items.Count == 0) return;
