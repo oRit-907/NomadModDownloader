@@ -539,7 +539,7 @@ internal sealed partial class MainForm : Form
         toolbar.Controls.Add(findBox);
         foreach (var b in new[] { check, _updateAllButton, fromFile, open }) { b.Margin = new Padding(0, 0, 8, 6); toolbar.Controls.Add(b); }
 
-        var cards = new CardList { VersionColumn = 1, LineColumns = new[] { 2, 3, 4 } };
+        var cards = new CardList { VersionColumn = 1, LineColumns = new[] { 2, 6, 3, 4 } };
         cards.ButtonsFor = item => item.Tag switch
         {
             InstalledMod m => new[] { m.ModId > 0 ? L.T("Page") : null, m.Update != null ? L.T("Update") : null, m.Disabled ? L.T("Enable") : L.T("Disable"), L.T("Remove") }
@@ -1004,6 +1004,8 @@ internal sealed partial class MainForm : Form
                 // Not mods the app can install: BepInEx itself, mods nobody has downloaded, and programs (.exe).
                 if (IsLoaderPack(m) || m.Downloads == 0 || m.ExeOnly) { _browseHidden++; continue; }
                 var have = installed.Contains(m.ModId) || m.ModId == SelfModId || byHand.Contains(key);
+                // Sorted by what it does, the same way as the in-game Mods menu.
+                m.Category = m.ModId == SelfModId ? "Tools & Frameworks" : NomadModManager.Categories.Classify(m.Name, m.Summary);
                 var item = new ListViewItem(have ? "✓ " + m.Name : m.Name) { Tag = m };
                 item.SubItems.Add(m.Author);
                 item.SubItems.Add(m.Version);
@@ -1049,7 +1051,7 @@ internal sealed partial class MainForm : Form
     private void RebuildChips()
     {
         var cats = _browseAll.Select(i => (i.Tag as ModInfo)?.Category ?? "").Where(c => c.Length > 0)
-            .GroupBy(c => c, StringComparer.OrdinalIgnoreCase).OrderByDescending(g => g.Count()).ThenBy(g => g.Key).ToList();
+            .GroupBy(c => c, StringComparer.OrdinalIgnoreCase).OrderBy(g => NomadModManager.Categories.Rank(g.Key)).ToList();
         if (_category != null && !cats.Any(c => c.Key.Equals(_category, StringComparison.OrdinalIgnoreCase))) _category = null;
         _chips.SuspendLayout();
         foreach (Control c in _chips.Controls) c.Dispose();
@@ -1585,6 +1587,8 @@ internal sealed partial class MainForm : Form
             AddLoadCell(item, m.Files, m.Disabled);
             item.SubItems.Add(m.Location);
             item.SubItems.Add(Fmt.Date(m.InstalledAt));
+            var known = _knownByName.Values.FirstOrDefault(k => k.ModId == m.ModId && m.ModId > 0);
+            item.SubItems.Add(m.ModId == SelfModId ? "Tools & Frameworks" : NomadModManager.Categories.Classify(m.Name, known?.Summary ?? ""));
             var author = m.Author.Length > 0 ? m.Author
                 : _knownByName.Values.FirstOrDefault(k => k.ModId == m.ModId && m.ModId > 0)?.Author ?? "";
             if (!MatchesInstalledFilter(m.Name, author)) continue;
@@ -1607,6 +1611,7 @@ internal sealed partial class MainForm : Form
                 var names = new List<string> { folderName, Path.GetFileNameWithoutExtension(folderName) };
                 names.AddRange(UntrackedPluginNames(rel));
                 var author = names.Select(n => _knownByName.TryGetValue(NameKey(n), out var k) ? k.Author : "").FirstOrDefault(a => a.Length > 0) ?? "";
+                item.SubItems.Add(NomadModManager.Categories.Classify(string.Join(" ", names), ""));
                 if (!MatchesInstalledFilter(string.Join(" ", names), author)) continue;
                 rows.Add((author, item));
             }

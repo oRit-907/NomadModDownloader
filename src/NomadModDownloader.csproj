@@ -27,6 +27,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The same categories as the in-game Mods menu (Nexus files every Nomad Drive mod under Miscellaneous). -->
+    <Compile Include="..\mod\NomadModManager\Plugin\Categories.cs" Link="Core\Categories.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- App text and AKoRit mod pages in 11 languages. -->
     <EmbeddedResource Include="Lang\*.json" LogicalName="Lang.%(Filename)%(Extension)" />
     <!-- Nomad Drive's menu backgrounds and logo (from the game) and its Noto Sans font (OFL). -->
