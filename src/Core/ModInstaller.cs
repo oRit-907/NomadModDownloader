@@ -72,6 +72,8 @@ public sealed class InstallPlan
     /// <summary>archive entry key (or "" for a bare file) -> destination relative to the game folder</summary>
     public Dictionary<string, string> Map { get; } = new(StringComparer.Ordinal);
     public List<string> Skipped { get; } = new();
+    /// <summary>The download bundles BepInEx; its BepInEx files are left out (they're in <see cref="Skipped"/>).</summary>
+    public bool SkippedBepInEx { get; set; }
     public string TargetDescription { get; set; } = "";
 }
 
@@ -103,6 +105,23 @@ public static class ModInstaller
     }
 
     public static string ModFolderName(string modName) => Fmt.SafeFileName(modName);
+
+    private static readonly HashSet<string> LoaderRootFiles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "winhttp.dll", "version.dll", "doorstop_config.ini", ".doorstop_version", "changelog.txt",
+        "run_bepinex.sh", "libdoorstop.so", "libdoorstop.dylib",
+    };
+    private static readonly string[] LoaderFolders =
+    {
+        "BepInEx/core/", "BepInEx/cache/", "BepInEx/unity-libs/", "BepInEx/interop/", "dotnet/", "doorstop_libs/",
+    };
+
+    /// <summary>Part of BepInEx itself (the loader, its core and caches, its own settings file), not part of a mod.</summary>
+    public static bool IsLoaderFile(string rel) =>
+        LoaderRootFiles.Contains(rel)
+        || LoaderFolders.Any(f => rel.StartsWith(f, StringComparison.OrdinalIgnoreCase))
+        || rel.Equals("BepInEx/config/BepInEx.cfg", StringComparison.OrdinalIgnoreCase)
+        || rel.Equals("BepInEx/LogOutput.log", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Looks inside a downloaded file and decides where everything goes. Writes nothing.</summary>
     public static InstallPlan Analyze(string file, string modName, InstallKind? forceUnknownAs = null)
@@ -152,15 +171,22 @@ public static class ModInstaller
 
         bool IsRootDoc(string rel) => !rel.Contains('/') && DocExt.Contains(System.IO.Path.GetExtension(rel));
 
-        // 1) A BepInEx pack itself
-        if (items.Any(i => i.Rel.Equals("winhttp.dll", StringComparison.OrdinalIgnoreCase)
-                        || i.Rel.Equals("doorstop_config.ini", StringComparison.OrdinalIgnoreCase)
-                        || i.Rel.StartsWith("BepInEx/core/", StringComparison.OrdinalIgnoreCase)))
+        // 1) BepInEx's own files. A mod that bundles BepInEx: skip them (the app sets up and updates BepInEx itself,
+        //    and a bundled copy could replace yours with another version) and install the rest as the mod.
+        //    Only BepInEx and nothing else: a BepInEx pack.
+        if (items.Any(i => IsLoaderFile(i.Rel)))
         {
-            plan.Kind = InstallKind.LoaderPack;
-            foreach (var i in items) plan.Map[i.Key] = i.Rel;
-            plan.TargetDescription = L.T("the game folder (this is a BepInEx pack)");
-            return plan;
+            var mod = items.Where(i => !IsLoaderFile(i.Rel) && !IsRootDoc(i.Rel)).ToList();
+            if (!mod.Any(i => i.Rel.Contains('/') || i.Rel.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)))
+            {
+                plan.Kind = InstallKind.LoaderPack;
+                foreach (var i in items) plan.Map[i.Key] = i.Rel;
+                plan.TargetDescription = L.T("the game folder (this is a BepInEx pack)");
+                return plan;
+            }
+            foreach (var i in items.Where(i => IsLoaderFile(i.Rel))) plan.Skipped.Add(i.Rel);
+            plan.SkippedBepInEx = true;
+            items = items.Where(i => !IsLoaderFile(i.Rel)).ToList();
         }
 
         // 2) Laid out from the game folder: .../BepInEx/plugins/...

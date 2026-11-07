@@ -1244,6 +1244,7 @@ internal sealed partial class MainForm : Form
             Log(L.F("  Replaced your hand-installed copy (backed up): {0}", string.Join(", ", meta.Replaced.Select(r => r.Replace('/', '\\')))));
         if (meta.NotReplaced.Count > 0)
             Log(L.F("  Couldn't remove your hand-installed copy, so the mod is there twice (BepInEx runs the newest): {0}. Close the game and install again, or remove it on the Installed tab.", string.Join(", ", meta.NotReplaced.Select(r => r.Replace('/', '\\')))));
+        if (plan.SkippedBepInEx) Log(L.T("  This download also includes BepInEx. Those files were left out: the app keeps your BepInEx set up and up to date."));
         if (plan.Skipped.Count > 0) Log(L.T("  Skipped (readmes/extra files): ") + string.Join(", ", plan.Skipped.Take(8)) + (plan.Skipped.Count > 8 ? " …" : ""));
         RefreshGame();
         RefreshInstalled();
