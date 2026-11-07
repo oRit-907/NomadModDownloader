@@ -86,6 +86,8 @@ namespace NomadModManager
         private CursorLockMode _cursorLock;
         private UnityEngine.EventSystems.EventSystem _events;
         private bool _eventsWas;
+        private UnityEngine.EventSystems.EventSystem _restoreEvents; // given back one frame after closing
+        private float _openedAt;
         private bool _cursorVisible, _cursorSaved;
 
         // Browse: a mod's page
@@ -150,11 +152,12 @@ namespace NomadModManager
             _problems.Clear();
             FindGameArt(panel);
             try { _cursorLock = Cursor.lockState; _cursorVisible = Cursor.visible; _cursorSaved = true; } catch { }
-            if (!OpenedFromMainMenu)
-            {
-                // During play the game's own UI would get our clicks too: pause its input while the menu is open.
+            // The game's own menus would get our clicks and controller presses too (they sit right behind this):
+            // pause their input while the Mods menu is open.
+            if (_restoreEvents != null) { _events = _restoreEvents; _restoreEvents = null; }  // reopened before it was given back
+            else
                 try { _events = UnityEngine.EventSystems.EventSystem.current; if (_events != null) { _eventsWas = _events.enabled; _events.enabled = false; } } catch { _events = null; }
-            }
+            _openedAt = Time.unscaledTime;
 
             var canvas = panel != null ? panel.GetComponentInParent<Canvas>() : null;
             if (canvas != null)
@@ -181,7 +184,8 @@ namespace NomadModManager
             if (_cursorSaved && !OpenedFromMainMenu) { try { Cursor.lockState = _cursorLock; Cursor.visible = _cursorVisible; } catch { } }
             OpenedFromPause = false;
             _cursorSaved = false;
-            if (_events != null) { try { _events.enabled = _eventsWas; } catch { } _events = null; }
+            // Next frame: the button press that closed this mustn't also reach the game's menu.
+            if (_events != null) { _restoreEvents = _eventsWas ? _events : null; _events = null; }
             if (_blocked != null) { _blocked.blocksRaycasts = _blockedWas; _blocked = null; }
             if (_hidden != null) { _hidden.alpha = _hiddenAlpha; _hidden = null; }
         }
@@ -210,6 +214,7 @@ namespace NomadModManager
                 if (pad.selectButton.isPressed) { _holdOpen += Time.unscaledDeltaTime; if (_holdOpen >= 1f) { toggle = true; _holdOpen = -10f; } }
                 else _holdOpen = 0;
             }
+            if (_restoreEvents != null && !IsOpen) { try { _restoreEvents.enabled = true; } catch { } _restoreEvents = null; }
             if (toggle)
             {
                 if (IsOpen) Close();
@@ -254,8 +259,11 @@ namespace NomadModManager
                 else if (Time.unscaledTime >= _navRepeat) { dir = held; _navRepeat = Time.unscaledTime + 0.12f; }
             }
             if (dir >= 0) { _padMode = true; _navDir = dir; }
-            if (pad.buttonSouth.wasPressedThisFrame) { _padMode = true; _navActivate = true; }
-            if (pad.buttonEast.wasPressedThisFrame) { _padMode = true; Back(); }
+            // The press that opened the menu (A on the game's Mods button) isn't a press in here.
+            var settled = Time.unscaledTime - _openedAt > 0.25f;
+            if (pad.buttonSouth.wasPressedThisFrame && settled) { _padMode = true; _navActivate = true; }
+            if (pad.buttonEast.wasPressedThisFrame && settled) { _padMode = true; Back(); }
+            if (!settled && pad.buttonSouth.isPressed) _padMode = true;
             if (pad.leftShoulder.wasPressedThisFrame) { _padMode = true; NextTab(-1); }
             if (pad.rightShoulder.wasPressedThisFrame) { _padMode = true; NextTab(1); }
             var rs = pad.rightStick.ReadValue().y;
