@@ -490,6 +490,8 @@ internal sealed class CardList : ListView
     }
 
     private static readonly TextFormatFlags One = TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+    // Measuring with EndEllipsis gives the width of "…" only: measure without it.
+    private static Size Measure(Graphics g, string s, Font f) => TextRenderer.MeasureText(g, s, f, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
 
     private List<(string Label, Rectangle Rect)> ButtonRects(ListViewItem item, Rectangle card)
     {
@@ -532,8 +534,8 @@ internal sealed class CardList : ListView
         var x = card.X + 18;
         // line 1: name, then the version in grey
         var nameColor = item.ForeColor == Theme.Muted ? Theme.Muted : Theme.Text;
-        var nameSize = TextRenderer.MeasureText(g, item.Text, Theme.Title, Size.Empty, One);
-        var nameRect = new Rectangle(x, card.Y + 9, Math.Min(nameSize.Width, textRight - x), nameSize.Height);
+        var nameSize = Measure(g, item.Text, Theme.Title);
+        var nameRect = new Rectangle(x, card.Y + 9, Math.Min(nameSize.Width + 6, textRight - x), nameSize.Height + 2);
         TextRenderer.DrawText(g, item.Text, Theme.Title, nameRect, nameColor, One);
         var ver = VersionColumn < item.SubItems.Count ? item.SubItems[VersionColumn].Text : "";
         if (ver.Length > 0 && nameRect.Right + 10 < textRight)
@@ -555,12 +557,12 @@ internal sealed class CardList : ListView
             if (!first)
             {
                 TextRenderer.DrawText(g, "  ·  ", Theme.Small, new Rectangle(lx, ly, 40, 22), Theme.Muted, One);
-                lx += TextRenderer.MeasureText(g, "  ·  ", Theme.Small, Size.Empty, One).Width;
+                lx += Measure(g, "  ·  ", Theme.Small).Width;
             }
             var color = item.SubItems[c].ForeColor;
             if (color == ForeColor || color == Theme.Text || color.IsEmpty) color = Theme.Muted;
             var font = first ? Theme.Bold : Theme.Small;
-            var w = Math.Min(TextRenderer.MeasureText(g, s, font, Size.Empty, One).Width, textRight - lx);
+            var w = Math.Min(Measure(g, s, font).Width + 4, textRight - lx);
             TextRenderer.DrawText(g, s, font, new Rectangle(lx, ly - (first ? 1 : 0), w, 22), color, One);
             lx += w;
             first = false;

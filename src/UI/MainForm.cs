@@ -391,7 +391,7 @@ internal sealed partial class MainForm : Form
         var page = new Panel { BackColor = Color.Transparent };
 
         // ---- right: the mod card ----
-        var card = new GlassPanel { Dock = DockStyle.Right, Width = 400, Padding = new Padding(18) };
+        var card = _browseCard = new GlassPanel { Dock = DockStyle.Right, Width = 400, Padding = new Padding(18), Visible = false };
         page.SizeChanged += (_, _) => card.Width = Math.Clamp(page.Width * 36 / 100, 330, 420); // narrower windows: a narrower card
         var stack = new ScrollStack { Dock = DockStyle.Fill }; // the Browse card scrolls too
         const int W = 360;
@@ -439,7 +439,10 @@ internal sealed partial class MainForm : Form
         _showOld.CheckedChanged += (_, _) => PopulateFiles();
         _translateLink = new LinkLabel { AutoSize = true, Font = Theme.Small, LinkColor = Theme.Accent, ActiveLinkColor = Theme.Text, ForeColor = Theme.Muted, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 4), Visible = false };
         _translateLink.LinkClicked += async (_, _) => { _showingOriginal = !_showingOriginal; if (_selectedMod != null) await ShowSummaryAsync(_selectedMod); };
-        stack.Controls.AddRange(new Control[] { _picture, _modTitle, _modMeta, _reqLabel, _modSummary, _translateLink, fileLabel, _files, _showOld, _fileInfo, actions });
+        // Details open beside the grid (Details on a card); Close gives the grid the whole width again.
+        var close = new LinkLabel { Text = "✕ " + L.T("Close"), AutoSize = true, Font = Theme.Bold, LinkColor = Theme.Muted, ActiveLinkColor = Theme.Text, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 10), LinkBehavior = LinkBehavior.NeverUnderline };
+        close.LinkClicked += (_, _) => ShowBrowseCard(false);
+        stack.Controls.AddRange(new Control[] { close, _picture, _modTitle, _modMeta, _reqLabel, _modSummary, _translateLink, fileLabel, _files, _showOld, _fileInfo, actions });
         card.Controls.Add(stack);
 
         // ---- left: search + list ----
@@ -456,24 +459,37 @@ internal sealed partial class MainForm : Form
         var refresh = Theme.Button(L.T("Refresh"));
         refresh.Margin = new Padding(0, 2, 0, 0);
         refresh.Click += async (_, _) => await LoadModsAsync(reset: true);
-        toolbar.Controls.AddRange(new Control[] { Field(_search, 230), _sort, refresh });
-
-        // Cards like the in-game Mods menu: name and version, then author, downloads, endorsements and date, with Install on the right.
-        var cards = new CardList
+        _search.PlaceholderText = L.T("Search mods — just start typing");
+        var searchBox = Field(_search, 360);
+        toolbar.Controls.Add(searchBox);
+        // Sort as pills, like the in-game menu (the list behind them stays for the keyboard and controller)
+        _sort.Visible = false;
+        toolbar.Controls.Add(_sort);
+        var sortNames = new[] { L.T("Updated"), L.T("Downloads"), L.T("Endorsed"), L.T("Newest") };
+        var sortPills = new List<Button>();
+        for (var i = 0; i < sortNames.Length; i++)
         {
-            VersionColumn = 2, LineColumns = new[] { 1, 3, 4, 5 },
-            LineFormats = new[] { L.T("by {0}"), L.T("{0} downloads"), L.T("{0} endorsements"), L.T("updated {0}") },
-        };
-        cards.ButtonsFor = item => item.Tag is ModInfo
-            ? new List<string> { item.Text.StartsWith("✓ ") ? L.T("Reinstall") : L.T("Install") }
-            : new List<string>();
-        cards.ButtonClicked += async (item, label) =>
+            var idx = i;
+            var pill = Theme.Button(sortNames[i], i == 0);
+            pill.Margin = new Padding(0, 2, 8, 0);
+            pill.Click += (_, _) => { _sort.SelectedIndex = idx; for (var k = 0; k < sortPills.Count; k++) ((GameButton)sortPills[k]).Primary = k == idx; foreach (var p2 in sortPills) p2.Invalidate(); };
+            sortPills.Add(pill);
+            toolbar.Controls.Add(pill);
+        }
+        refresh.Margin = new Padding(8, 2, 0, 0);
+        toolbar.Controls.Add(refresh);
+        _chips = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, WrapContents = true, Padding = new Padding(0, 0, 0, 8) };
+
+        // A grid of cards like the in-game Mods menu: picture, name, category, author, summary, Install and Details.
+        var grid = new ModGrid { InstallText = L.T("Install"), InstalledText = L.T("Installed"), DetailsText = L.T("Details") };
+        grid.ImageFor = ThumbFor;
+        grid.ButtonClicked += async (item, which) =>
         {
             if (item.Tag is ModInfo m && _selectedMod?.ModId != m.ModId) await ShowModAsync();
-            await InstallSelectedAsync();
+            if (which == "Details") ShowBrowseCard(true);
+            else await InstallSelectedAsync();
         };
-        _modList = cards;
-        for (var c = 0; c < 6; c++) _modList.Columns.Add("");
+        _modList = grid;
         _modList.SelectedIndexChanged += async (_, _) => await ShowModAsync();
         _modList.DoubleClick += async (_, _) => await InstallSelectedAsync();
 
@@ -485,6 +501,7 @@ internal sealed partial class MainForm : Form
 
         listPanel.Controls.Add(_modList);
         listPanel.Controls.Add(more);
+        listPanel.Controls.Add(_chips);
         listPanel.Controls.Add(toolbar);
 
         page.Controls.Add(listPanel);
@@ -539,7 +556,6 @@ internal sealed partial class MainForm : Form
             else if (label == L.T("Remove")) await RunExclusive(UninstallSelectedAsync);
         };
         _installedList = cards;
-        _installedList.Columns.Add(""); _installedList.Columns.Add(""); _installedList.Columns.Add(""); _installedList.Columns.Add(""); _installedList.Columns.Add("");
         _installedList.SelectedIndexChanged += (_, _) => { UpdateInstalledButtons(); ShowLoadDetail(); };
 
         var hint = new Label
@@ -978,7 +994,7 @@ internal sealed partial class MainForm : Form
             if (reset) _browseHidden = 0;
             _browseTotal = total;
             _modList.BeginUpdate();
-            if (reset) _modList.Items.Clear();
+            if (reset) { _modList.Items.Clear(); _browseAll.Clear(); }
             var installed = _manifest.Mods.Select(m => m.ModId).ToHashSet();
             var byHand = HandInstalledKeys();
             foreach (var m in mods)
@@ -994,9 +1010,11 @@ internal sealed partial class MainForm : Form
                 item.SubItems.Add(Fmt.Count(m.Downloads));
                 item.SubItems.Add(Fmt.Count(m.Endorsements));
                 item.SubItems.Add((m.UpdatedAt is { } up ? Fmt.ShortDate(up.ToLocalTime()) : null) ?? "");
-                _modList.Items.Add(item);
+                _browseAll.Add(item);
+                if (BrowseShows(item)) _modList.Items.Add(item);
             }
             _modList.EndUpdate();
+            RebuildChips();
             _browseOffset += mods.Count;
             _loadMore.Visible = _browseOffset < _browseTotal;
             var shown = Math.Max(0, _browseTotal - _browseHidden);
@@ -1012,6 +1030,85 @@ internal sealed partial class MainForm : Form
         }
     }
 
+    private GlassPanel _browseCard = null!;
+    private FlowLayoutPanel _chips = null!;
+    private readonly List<ListViewItem> _browseAll = new();
+    private string? _category; // chip filter (null = all)
+    private readonly Dictionary<int, Image?> _thumbs = new();
+    private readonly SemaphoreSlim _thumbGate = new(4);
+
+    private void ShowBrowseCard(bool show)
+    {
+        if (_browseCard.Visible == show) return;
+        _browseCard.Visible = show;
+    }
+
+    private bool BrowseShows(ListViewItem item) => _category == null || (item.Tag is ModInfo m && string.Equals(m.Category, _category, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Category chips with counts ("All (49)", "Cheats (3)"), like the in-game menu.</summary>
+    private void RebuildChips()
+    {
+        var cats = _browseAll.Select(i => (i.Tag as ModInfo)?.Category ?? "").Where(c => c.Length > 0)
+            .GroupBy(c => c, StringComparer.OrdinalIgnoreCase).OrderByDescending(g => g.Count()).ThenBy(g => g.Key).ToList();
+        if (_category != null && !cats.Any(c => c.Key.Equals(_category, StringComparison.OrdinalIgnoreCase))) _category = null;
+        _chips.SuspendLayout();
+        foreach (Control c in _chips.Controls) c.Dispose();
+        _chips.Controls.Clear();
+        void Chip(string text, string? cat)
+        {
+            var b = Theme.Button(text, string.Equals(cat, _category, StringComparison.OrdinalIgnoreCase));
+            b.Font = Theme.Small;
+            b.Margin = new Padding(0, 0, 8, 6);
+            b.Click += (_, _) => { _category = cat; ApplyBrowseFilter(); RebuildChips(); };
+            _chips.Controls.Add(b);
+        }
+        Chip(L.F("All ({0})", _browseAll.Count), null);
+        foreach (var g in cats) Chip($"{g.Key} ({g.Count()})", g.Key);
+        _chips.ResumeLayout();
+    }
+
+    private void ApplyBrowseFilter()
+    {
+        _modList.BeginUpdate();
+        _modList.Items.Clear();
+        foreach (var i in _browseAll) if (BrowseShows(i)) _modList.Items.Add(i);
+        _modList.EndUpdate();
+    }
+
+    /// <summary>A mod's small picture for its card; starts the download the first time and redraws the card when it's in.</summary>
+    private Image? ThumbFor(ModInfo m)
+    {
+        if (_thumbs.TryGetValue(m.ModId, out var img)) return img;
+        _thumbs[m.ModId] = null;
+        _ = LoadThumbAsync(m);
+        return null;
+    }
+
+    private async Task LoadThumbAsync(ModInfo m)
+    {
+        try { await _thumbGate.WaitAsync(_closing.Token).ConfigureAwait(true); }
+        catch (OperationCanceledException) { return; }
+        try
+        {
+            foreach (var url in new[] { m.ThumbnailUrl, m.PictureUrl }.Where(u => !string.IsNullOrEmpty(u)).Distinct())
+            {
+                try
+                {
+                    var bytes = await _http.GetByteArrayAsync(url, _closing.Token);
+                    var bmp = await Task.Run(() => DecodeImage(bytes));
+                    if (bmp == null) continue;
+                    if (IsDisposed) { bmp.Dispose(); return; }
+                    _thumbs[m.ModId] = bmp;
+                    (_modList as ModGrid)?.Refresh(m.ModId);
+                    return;
+                }
+                catch (OperationCanceledException) { return; }
+                catch { }
+            }
+        }
+        finally { _thumbGate.Release(); }
+    }
+
     /// <summary>Shows one mod's page in Browse (adding it to the list if the current search doesn't have it).</summary>
     private async Task OpenModPageAsync(int modId)
     {
@@ -1023,9 +1120,11 @@ internal sealed partial class MainForm : Form
             try { mod = await _api.GetModAsync(modId, _closing.Token); } catch { }
             if (mod == null) { SetStatus(L.T("Couldn't open that mod's page.")); return; }
             item = new ListViewItem(mod.Name) { Tag = mod };
-            for (var i = 0; i < _modList.Columns.Count - 1; i++) item.SubItems.Add("");
+            for (var i = 0; i < 5; i++) item.SubItems.Add("");
+            _browseAll.Insert(0, item);
             _modList.Items.Insert(0, item);
         }
+        ShowBrowseCard(true);
         _modList.SelectedItems.Clear();
         item.Selected = true;
         item.Focused = true;
@@ -1691,8 +1790,9 @@ internal sealed partial class MainForm : Form
 
     private void MarkInstalledInBrowse(int modId)
     {
-        foreach (ListViewItem item in _modList.Items)
+        foreach (var item in _browseAll)
             if (item.Tag is ModInfo mi && mi.ModId == modId && !item.Text.StartsWith("✓ ")) item.Text = "✓ " + item.Text;
+        _modList.Invalidate();
         if (_selectedMod?.ModId == modId) _installButton.Text = L.T("Reinstall");
     }
 
