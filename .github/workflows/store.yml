@@ -81,9 +81,25 @@ jobs:
           name: NomadModDownloader-${{ env.PKGVER }}-store
           path: out/*
 
-      - name: Remove the store/ branch
+      # For a store/ branch: put the package on the branch store-out/<name> (in parts under 100 MB, joined with
+      # cat or copy /b), so it can be fetched with git alone, and remove the store/ branch.
+      - name: Hand back the package
         if: startsWith(github.ref, 'refs/heads/store/')
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: git push origin --delete "${{ github.ref_name }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="store-out/${GITHUB_REF_NAME#store/}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan "$OUT"
+          git rm -rf -q --cached . > /dev/null
+          mkdir -p handback
+          for f in out/*.msix; do
+            n="$(basename "$f")"
+            split -b 90m -d -a 2 "$f" "handback/$n.part"
+            (cd out && sha256sum "$n") >> handback/SHA256SUMS
+          done
+          git add -f handback
+          git commit -q -m "Store package ${PKGVER}"
+          git push -f origin "HEAD:refs/heads/$OUT"
+          git push origin --delete "$GITHUB_REF_NAME"
