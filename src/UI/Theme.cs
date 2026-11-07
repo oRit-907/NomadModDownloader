@@ -449,6 +449,8 @@ internal sealed class CardList : ListView
 {
     public int VersionColumn { get; set; } = 1;
     public int[] LineColumns { get; set; } = Array.Empty<int>();
+    /// <summary>Optional wording around each LineColumns piece: "{0} downloads" (same order as LineColumns).</summary>
+    public string[]? LineFormats { get; set; }
     /// <summary>The buttons for a row (left to right).</summary>
     public Func<ListViewItem, IReadOnlyList<string>> ButtonsFor { get; set; } = _ => Array.Empty<string>();
     /// <summary>A row's button was pressed (the row is selected first).</summary>
@@ -543,10 +545,12 @@ internal sealed class CardList : ListView
         var lx = x;
         var ly = card.Y + card.Height - 30;
         var first = true;
-        foreach (var c in LineColumns)
+        for (var li = 0; li < LineColumns.Length; li++)
         {
+            var c = LineColumns[li];
             if (c >= item.SubItems.Count) continue;
             var s = item.SubItems[c].Text;
+            if (!string.IsNullOrWhiteSpace(s) && LineFormats != null && li < LineFormats.Length && LineFormats[li].Length > 0) s = string.Format(LineFormats[li], s);
             if (string.IsNullOrWhiteSpace(s) || lx >= textRight) continue;
             if (!first)
             {

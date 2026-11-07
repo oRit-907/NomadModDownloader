@@ -458,13 +458,22 @@ internal sealed partial class MainForm : Form
         refresh.Click += async (_, _) => await LoadModsAsync(reset: true);
         toolbar.Controls.AddRange(new Control[] { Field(_search, 230), _sort, refresh });
 
-        _modList = Theme.List();
-        _modList.Columns.Add(L.T("Mod"), 210);
-        _modList.Columns.Add(L.T("Author"), 110);
-        _modList.Columns.Add(L.T("Version"), 85);
-        _modList.Columns.Add(L.T("Downloads"), 85);
-        _modList.Columns.Add(L.T("Endorsed"), 80).Tag = "optional";
-        _modList.Columns.Add(L.T("Updated"), 90);
+        // Cards like the in-game Mods menu: name and version, then author, downloads, endorsements and date, with Install on the right.
+        var cards = new CardList
+        {
+            VersionColumn = 2, LineColumns = new[] { 1, 3, 4, 5 },
+            LineFormats = new[] { L.T("by {0}"), L.T("{0} downloads"), L.T("{0} endorsements"), L.T("updated {0}") },
+        };
+        cards.ButtonsFor = item => item.Tag is ModInfo
+            ? new List<string> { item.Text.StartsWith("✓ ") ? L.T("Reinstall") : L.T("Install") }
+            : new List<string>();
+        cards.ButtonClicked += async (item, label) =>
+        {
+            if (item.Tag is ModInfo m && _selectedMod?.ModId != m.ModId) await ShowModAsync();
+            await InstallSelectedAsync();
+        };
+        _modList = cards;
+        for (var c = 0; c < 6; c++) _modList.Columns.Add("");
         _modList.SelectedIndexChanged += async (_, _) => await ShowModAsync();
         _modList.DoubleClick += async (_, _) => await InstallSelectedAsync();
 
