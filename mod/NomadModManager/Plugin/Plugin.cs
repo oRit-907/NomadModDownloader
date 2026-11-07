@@ -112,6 +112,7 @@ namespace NomadModManager
         private void Update()
         {
             if (AtMainMenu) MenuButton.KeepLayout();
+            if (PauseMenu != null && PauseMenu.isActiveAndEnabled) PauseButton.KeepLayout();
             // Opened from the main menu and the game has moved on (a save is loading), or the pause menu closed: close.
             if (Menu.IsOpen && Menu.OpenedFromMainMenu && !AtMainMenu) Menu.Close();
             if (Menu.IsOpen && Menu.OpenedFromPause && (PauseMenu == null || !PauseMenu.isActiveAndEnabled)) Menu.Close();
@@ -152,6 +153,21 @@ namespace NomadModManager
     internal static class PauseButton
     {
         private const string ObjectName = "NomadModManager_PauseModsButton";
+        private static readonly List<(RectTransform Rt, Vector3 Original, Vector3 Target)> Moved = new List<(RectTransform, Vector3, Vector3)>();
+
+        private static Vector3 Center(RectTransform rt)
+        {
+            var c = new Vector3[4];
+            rt.GetWorldCorners(c);
+            return (c[0] + c[2]) / 2f;
+        }
+
+        /// <summary>If the game puts a re-spaced item back (when the pause menu opens again), move it again.</summary>
+        public static void KeepLayout()
+        {
+            foreach (var (rt, original, target) in Moved)
+                if (rt != null && (rt.localPosition - original).sqrMagnitude < 0.01f) rt.localPosition = target;
+        }
 
         public static void Add(EvilCore.UI.GameMenu.Panels.GameMenuRootPanel panel)
         {
@@ -171,17 +187,37 @@ namespace NomadModManager
             button.interactable = true;
             MenuButton.LinkNavigation(button, source, below: true);
 
-            // Without a layout group the buttons are placed by position: move everything under Settings down a row.
+            // Without a layout group the items are placed by position (each in its own container): space the column
+            // out again with Mods in it, keeping its top and bottom where they are (the "Stuck?" cards sit just below).
             if (parent.GetComponent<LayoutGroup>() == null)
             {
+                Canvas.ForceUpdateCanvases();
                 var setRt = (RectTransform)source.transform;
-                var siblings = parent.GetComponentsInChildren<Button>(true).Where(b => b != source && b != button && b.transform.parent == parent).Select(b => (RectTransform)b.transform).ToList();
-                var setY = setRt.position.y;
-                var under = siblings.Where(rt => rt.position.y < setY - 1f).OrderByDescending(rt => rt.position.y).ToList();
-                var above = siblings.Where(rt => rt.position.y > setY + 1f).OrderBy(rt => rt.position.y).FirstOrDefault();
-                var step = under.Count > 0 ? setY - under[0].position.y : above != null ? above.position.y - setY : setRt.rect.height * setRt.lossyScale.y * 1.1f;
-                ((RectTransform)go.transform).position = setRt.position - new Vector3(0, step, 0);
-                foreach (var rt in under) rt.position -= new Vector3(0, step, 0);
+                var cx = Center(setRt).x;
+                var tol = 60f * Mathf.Max(0.5f, setRt.lossyScale.x);
+                var column = panel.GetComponentsInChildren<Button>(true)
+                    .Where(x => x != button && x.gameObject.activeInHierarchy && Mathf.Abs(Center((RectTransform)x.transform).x - cx) < tol)
+                    .Select(x => (RectTransform)x.transform)
+                    .OrderByDescending(rt => Center(rt).y).ToList();
+                var at = column.IndexOf(setRt);
+                if (at >= 0 && column.Count >= 2)
+                {
+                    var top = Center(column[0]).y;
+                    var bottom = Center(column[column.Count - 1]).y;
+                    var modsRt = (RectTransform)go.transform;
+                    column.Insert(at + 1, modsRt);
+                    modsRt.position = setRt.position;
+                    var gap = (top - bottom) / (column.Count - 1);
+                    Moved.Clear();
+                    for (var i = 0; i < column.Count; i++)
+                    {
+                        var rt = column[i];
+                        var original = rt.localPosition;
+                        rt.position += new Vector3(0, (top - i * gap) - Center(rt).y, 0);
+                        if (rt != modsRt) Moved.Add((rt, original, rt.localPosition));
+                    }
+                    ModManagerPlugin.Log.LogInfo($"Pause menu: {column.Count} items re-spaced {gap:0} px apart ({string.Join(", ", column.Select(rt => rt.name).ToArray())}).");
+                }
             }
             ModManagerPlugin.Log.LogInfo($"Added the Mods button to the pause menu (under {source.name}, in {parent.name}{(parent.GetComponent<LayoutGroup>() != null ? ", layout group" : ", placed by position")}).");
         }
