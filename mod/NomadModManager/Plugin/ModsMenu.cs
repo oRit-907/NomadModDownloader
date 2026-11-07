@@ -562,11 +562,15 @@ namespace NomadModManager
                 var outdated = Downloader.Available;
                 var text = AppFetcher.Busy ? AppFetcher.Status
                     : outdated ? "Your Nomad Mod Downloader is out of date. Update it to " + Downloader.MinVersion + " or newer so Install here opens the mod in it, ready to download."
-                    : "Install uses Nomad Mod Downloader, a free app: Nexus needs you to click its download button, so the app opens the mod for you and installs it. Get it from GitHub with one click.";
-                GUI.Label(new Rect(banner.x + 18 * _s, banner.y + 10 * _s, banner.width - 270 * _s, banner.height - 20 * _s), text, _wrapSmall);
+                    : "Install uses Nomad Mod Downloader, a free app: Nexus needs you to click its download button, so the app opens the mod for you and installs it. Get it from the Microsoft Store, or from GitHub with one click.";
+                GUI.Label(new Rect(banner.x + 18 * _s, banner.y + 10 * _s, banner.width - 470 * _s, banner.height - 20 * _s), text, _wrapSmall);
                 var br = new Rect(banner.xMax - 240 * _s, banner.y + 14 * _s, 222 * _s, 42 * _s);
                 if (AppFetcher.Busy) ProgressBar(br, AppFetcher.Progress);
-                else if (Btn(br, outdated ? "Update downloader" : "Get the downloader", true)) GetDownloader();
+                else
+                {
+                    if (Btn(br, outdated ? "Update from GitHub" : "Get from GitHub", false)) GetDownloader();
+                    if (Btn(new Rect(br.x - 200 * _s, br.y, 190 * _s, br.height), "Microsoft Store", true)) OpenStore();
+                }
                 y += 84 * _s;
             }
 
@@ -785,12 +789,19 @@ namespace NomadModManager
             return string.Join("\n", parts.ToArray());
         }
 
+        /// <summary>Opens Nomad Mod Downloader in the Microsoft Store app (the website if the Store app won't open).</summary>
+        private void OpenStore()
+        {
+            try { Application.OpenURL(AppFetcher.StoreLink); Toast("Opening Nomad Mod Downloader in the Microsoft Store…", true); }
+            catch { Application.OpenURL(AppFetcher.StorePage); }
+        }
+
         /// <summary>Downloads Nomad Mod Downloader from GitHub and opens it.</summary>
         private void GetDownloader()
         {
             if (AppFetcher.Busy) return;
             Toast("Getting Nomad Mod Downloader from GitHub…", true);
-            AppFetcher.Start(_host, (ok, msg) => Toast(ok ? msg : msg + " You can also get it from GitHub: " + AppFetcher.ReleasesPage, ok));
+            AppFetcher.Start(_host, (ok, msg) => Toast(ok ? msg : msg + " You can also get it from the Microsoft Store, or from GitHub: " + AppFetcher.ReleasesPage, ok));
         }
 
         private void ProgressBar(Rect r, float p)

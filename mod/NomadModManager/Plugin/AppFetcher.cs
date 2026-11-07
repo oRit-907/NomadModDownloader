@@ -19,6 +19,10 @@ namespace NomadModManager
     {
         public const string Repo = "oRit-907/NomadModDownloader";
         public const string ReleasesPage = "https://github.com/" + Repo + "/releases/latest";
+        /// <summary>The Microsoft Store version (signed by Microsoft, so Windows Smart App Control doesn't block it).</summary>
+        public const string StoreId = "9NSF8H8H3Z0T";
+        public const string StoreLink = "ms-windows-store://pdp/?productid=" + StoreId;
+        public const string StorePage = "https://apps.microsoft.com/detail/" + StoreId;
         private const string Api = "https://api.github.com/repos/" + Repo + "/releases/latest";
 
         public static bool Busy { get; private set; }
