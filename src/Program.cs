@@ -7,11 +7,21 @@ namespace NomadModDownloader;
 internal static class GameLink
 {
     public const string Prefix = "nomadmods://install/";
+    public const string CheckLink = "nomadmods://check";
 
-    public static bool TryParse(string? line, out int modId)
+    /// <summary>"12" (latest), "12:345" (a specific file) or "12,34,56" (several, one after the other).</summary>
+    public static bool TryParse(string? line, out List<(int ModId, int? FileId)> items)
     {
-        modId = 0;
-        return line != null && line.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase) && int.TryParse(line[Prefix.Length..].Trim('/', ' '), out modId) && modId > 0;
+        items = new();
+        if (line == null || !line.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)) return false;
+        foreach (var part in line[Prefix.Length..].Trim('/', ' ').Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var bits = part.Split(':');
+            if (!int.TryParse(bits[0], out var mod) || mod <= 0) continue;
+            int? file = bits.Length > 1 && int.TryParse(bits[1], out var f) && f > 0 ? f : null;
+            if (!items.Any(i => i.ModId == mod)) items.Add((mod, file));
+        }
+        return items.Count > 0;
     }
 }
 
@@ -27,8 +37,10 @@ internal static class Program
         var link = NxmLink.FindInArgs(args);
         // From the in-game Mods menu: "--game-install <modId>"
         var gi = Array.FindIndex(args, a => a.Equals("--game-install", StringComparison.OrdinalIgnoreCase));
-        if (link == null && gi >= 0 && gi + 1 < args.Length && int.TryParse(args[gi + 1], out var gameModId) && gameModId > 0)
-            link = GameLink.Prefix + gameModId;
+        if (link == null && gi >= 0 && gi + 1 < args.Length && GameLink.TryParse(GameLink.Prefix + args[gi + 1], out _))
+            link = GameLink.Prefix + args[gi + 1];
+        // "--game-check": open Check BepInEx
+        if (link == null && args.Any(a => a.Equals("--game-check", StringComparison.OrdinalIgnoreCase))) link = GameLink.CheckLink;
 
         // Links for other games go straight back to the previous mod manager (Vortex/MO2) without opening this app.
         if (link != null && NxmLink.TryParse(link, out var parsed) && parsed is { IsNomadDrive: false })

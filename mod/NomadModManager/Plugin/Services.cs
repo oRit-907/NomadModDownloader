@@ -27,6 +27,35 @@ namespace NomadModManager
         public string PageUrl => $"https://www.nexusmods.com/{Nexus.GameDomain}/mods/{Id}";
     }
 
+    internal sealed class NexusFile
+    {
+        public int Id;
+        public string Name = "", Version = "", Category = "", Description = "";
+        public DateTime Date;
+        public long Size;
+        public bool Primary;
+        public List<string> Changelog = new List<string>();
+        public bool IsCurrent => Category == "MAIN" || Category == "OPTIONAL" || Category == "UPDATE" || Category == "MISCELLANEOUS";
+    }
+
+    internal sealed class NexusRequirement
+    {
+        public int ModId;            // 0 = not a Nomad Drive mod on Nexus
+        public string Name = "", Url = "", Notes = "";
+        public bool External;
+    }
+
+    /// <summary>A mod's full page: description, files (with changelogs) and requirements.</summary>
+    internal sealed class NexusDetails
+    {
+        public NexusMod Mod;
+        public string Description = "";
+        public string Picture = "";
+        public DateTime Updated;
+        public readonly List<NexusFile> Files = new List<NexusFile>();
+        public readonly List<NexusRequirement> Requirements = new List<NexusRequirement>();
+    }
+
     /// <summary>Browses Nexus with the public v2 GraphQL API (no login needed), Nomad Drive only.</summary>
     internal static class Nexus
     {
@@ -92,6 +121,73 @@ namespace NomadModManager
             var result = new List<NexusMod>();
             if (data is JObject o) foreach (var p in o.Properties()) if (p.Value is JObject) result.Add(Parse(p.Value));
             done(result);
+        }
+
+        /// <summary>Everything on a mod's page, in one request.</summary>
+        public static IEnumerator Details(int id, Action<NexusDetails, string> done)
+        {
+            var q = $"query {{ mod(modId: {id}, gameId: {GameId}) {{ {Fields} description pictureUrl updatedAt modRequirements {{ nexusRequirements {{ nodes {{ modId modName gameId externalRequirement url notes }} }} }} }} "
+                    + $"modFiles(modId: {id}, gameId: {GameId}) {{ fileId name version category date description changelogText primary sizeInBytes }} }}";
+            JToken data = null; string err = null;
+            yield return Query(q, null, d => data = d, e => err = e);
+            if (err != null || data?["mod"] == null) { done(null, err ?? "Nexus didn't send the mod's page"); yield break; }
+            var d2 = new NexusDetails { Mod = Parse(data["mod"]) };
+            d2.Description = BbText(Html((string)data["mod"]["description"] ?? ""));
+            d2.Picture = (string)data["mod"]["pictureUrl"] ?? "";
+            if (DateTime.TryParse((string)data["mod"]["updatedAt"], out var up)) d2.Updated = up;
+            foreach (var n in data["mod"]["modRequirements"]?["nexusRequirements"]?["nodes"] as JArray ?? new JArray())
+            {
+                var ext = (bool?)n["externalRequirement"] ?? false;
+                var game = (string)n["gameId"];
+                d2.Requirements.Add(new NexusRequirement
+                {
+                    ModId = !ext && (game == null || game == GameId.ToString()) ? int.TryParse((string)n["modId"], out var mid) ? mid : 0 : 0,
+                    Name = Html((string)n["modName"] ?? ""), Url = (string)n["url"] ?? "", Notes = Html((string)n["notes"] ?? ""), External = ext,
+                });
+            }
+            foreach (var f in data["modFiles"] as JArray ?? new JArray())
+            {
+                var file = new NexusFile
+                {
+                    Id = (int?)f["fileId"] ?? 0,
+                    Name = Html((string)f["name"] ?? ""), Version = (string)f["version"] ?? "", Category = ((string)f["category"] ?? "").ToUpperInvariant(),
+                    Description = BbText(Html((string)f["description"] ?? "")), Size = (long?)f["sizeInBytes"] ?? 0, Primary = (bool?)f["primary"] ?? false,
+                };
+                var secs = (long?)f["date"] ?? 0;
+                file.Date = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(secs).ToLocalTime();
+                if (f["changelogText"] is JArray cl) file.Changelog.AddRange(cl.Select(x => BbText(Html((string)x ?? ""))).Where(x => x.Length > 0));
+                d2.Files.Add(file);
+            }
+            d2.Files.Sort((a, b) => b.IsCurrent != a.IsCurrent ? (b.IsCurrent ? 1 : -1) : b.Date.CompareTo(a.Date));
+            done(d2, null);
+        }
+
+        /// <summary>Nexus descriptions are BBCode with &lt;br /&gt; line breaks: turn them into plain text with bullets.</summary>
+        public static string BbText(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            s = s.Replace("\r", "");
+            if (s.IndexOf("<br", StringComparison.OrdinalIgnoreCase) >= 0) s = s.Replace("\n", ""); // the <br />s are the line breaks
+            s = s.Replace("<br />", "\n").Replace("<br/>", "\n").Replace("<br>", "\n");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\[img[^\]]*\].*?\[/img\]", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\[youtube\].*?\[/youtube\]", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\[\*\]", "\n•  ");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\[/\*\]", "");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\[/?list[^\]]*\]", "\n");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\[line\]", "\n――――――\n", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\[/?(heading|center|quote|spoiler|code)[^\]]*\]", "\n", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"\[/?[a-zA-Z]+(=[^\]]*)?\]", "");
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"<[^>]+>", "");
+            var lines = s.Split('\n').Select(l => l.Trim()).ToList();
+            var sb = new StringBuilder();
+            var blank = 0;
+            foreach (var l in lines)
+            {
+                if (l.Length == 0 || l == "•") { if (++blank == 1 && sb.Length > 0) sb.Append('\n'); continue; }
+                blank = 0;
+                sb.Append(l).Append('\n');
+            }
+            return sb.ToString().Trim();
         }
 
         private static IEnumerator Query(string query, JObject vars, Action<JToken> ok, Action<string> fail)
@@ -320,16 +416,49 @@ namespace NomadModManager
             catch { return false; }
         }
 
+        /// <summary>First version that takes several mods, a specific file ("mod:file") and "--game-check".</summary>
+        public static readonly Version QueueVersion = new Version(2, 6, 8);
+
+        /// <summary>The downloader can take several mods at once, a specific version, and open Check BepInEx.</summary>
+        public static bool CanQueue
+        {
+            get
+            {
+                // Checked while drawing: cache it (reading the exe's version every frame is slow).
+                if (Time.realtimeSinceStartup < _canQueueUntil) return _canQueue;
+                _canQueueUntil = Time.realtimeSinceStartup + 10f;
+                return _canQueue = ExePath is string e && VersionOf(e) is Version v && v >= QueueVersion;
+            }
+        }
+        private static bool _canQueue;
+        private static float _canQueueUntil;
+
         /// <summary>Opens the mod in the downloader (starting it if needed). Returns false if the downloader isn't installed.</summary>
-        public static bool Install(int modId)
+        public static bool Install(int modId) => Run("--game-install " + modId, $"install mod {modId}");
+
+        /// <summary>A specific file (version) of a mod. Needs <see cref="CanQueue"/>.</summary>
+        public static bool InstallFile(int modId, int fileId) => Run($"--game-install {modId}:{fileId}", $"install file {fileId} of mod {modId}");
+
+        /// <summary>Several mods one after the other (Update all, a profile's missing mods). Needs <see cref="CanQueue"/>.</summary>
+        public static bool InstallMany(IEnumerable<int> modIds)
+        {
+            var ids = modIds.Where(i => i > 0).Distinct().ToList();
+            if (ids.Count == 0) return true;
+            if (ids.Count == 1) return Install(ids[0]);
+            return Run("--game-install " + string.Join(",", ids.Select(i => i.ToString()).ToArray()), $"install {ids.Count} mods");
+        }
+
+        /// <summary>Opens the downloader on Check BepInEx (older versions just open).</summary>
+        public static bool ShowCheck() => CanQueue ? Run("--game-check", "open Check BepInEx") : Show();
+
+        private static bool Run(string args, string what)
         {
             var exe = ExePath;
             if (exe == null) return false;
             try
             {
-                var psi = new ProcessStartInfo(exe, "--game-install " + modId) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(exe) };
-                Process.Start(psi);
-                ModManagerPlugin.Log.LogInfo($"Asked Nomad Mod Downloader to install mod {modId}.");
+                Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(exe) });
+                ModManagerPlugin.Log.LogInfo($"Asked Nomad Mod Downloader to {what}.");
                 return true;
             }
             catch (Exception e)

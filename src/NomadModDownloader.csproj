@@ -12,7 +12,7 @@
     <AssemblyName>NomadModDownloader</AssemblyName>
     <RootNamespace>NomadModDownloader</RootNamespace>
     <Product>Nomad Mod Downloader</Product>
-    <Version>2.6.7</Version>
+    <Version>2.6.8</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationVisualStyles>true</ApplicationVisualStyles>

@@ -27,6 +27,22 @@ The menu checks a new DLL before starting it without a restart. To decide for yo
 [assembly: System.Reflection.AssemblyMetadata("NomadHotLoad", "true")]   // or "false" to always ask for a restart
 ```
 
+## What it does (1.1.0)
+
+- **Browse mods** by category and sort. Open a mod for its full page: picture, description, every file and version
+  with changelogs, and its requirements (install them together with "Install with requirements").
+- **Installed**, grouped by author, with a search box and **Update all**. Mods that didn't start say why (missing or
+  switched-off requirements, conflicts, a newer copy, Unity code the game left out, errors) with a one-click fix.
+- **Settings** for each mod: switches, choices, numbers (with a drag bar when the mod gives a range), text and key
+  rebinding. Running mods take changes right away; the rest read them from their config file at their next start.
+- **Profiles**: save which mods are on and switch sets in one go (kept in `BepInEx\NomadModManager\profiles.json`).
+- **Changes** waiting for a restart, with Undo.
+- Opens from the main menu, with **F8** anywhere (also during play), or by holding the controller's View button.
+  Works with a **controller**: d-pad/stick to move, A to press, B back, LB/RB to switch pages, right stick to scroll.
+
+Installs, updates and specific versions are handed to Nomad Mod Downloader (2.6.8 or newer for several at once and
+for specific versions).
+
 ## BepInEx 5 and BepInEx 6 builds
 
 The menu ships as two downloads with the same features: **NomadModManager-x.y.z-BepInEx5.zip** and

@@ -801,9 +801,15 @@ internal sealed partial class MainForm : Form
     {
         if (switchPage) BringToFront2();
         if (line == "show") return;
-        if (GameLink.TryParse(line, out var gameModId))
+        if (line.Equals(GameLink.CheckLink, StringComparison.OrdinalIgnoreCase)) { ShowPage("Check BepInEx"); return; }
+        if (GameLink.TryParse(line, out var gameItems))
         {
-            await RunExclusive(() => InstallLatestFromGameAsync(gameModId));
+            if (gameItems.Count == 1) await RunExclusive(() => InstallLatestFromGameAsync(gameItems[0].ModId, gameItems[0].FileId));
+            else
+            {
+                Log(L.F("The game asked to install {0} mods.", gameItems.Count));
+                await StartQueueAsync(gameItems.Select(i => (i.ModId, i.FileId, L.F("Mod {0}", i.ModId))));
+            }
             return;
         }
         if (!NxmLink.TryParse(line, out var link) || link == null) { Log(L.T("Ignored an unrecognised link.")); return; }
@@ -819,13 +825,21 @@ internal sealed partial class MainForm : Form
     }
 
     /// <summary>"Install" / "Update" pressed in the game's Mods menu: open the mod's main current file, ready to click.</summary>
-    private async Task InstallLatestFromGameAsync(int modId)
+    private async Task InstallLatestFromGameAsync(int modId, int? fileId = null)
     {
-        if (RequireGame() == null) return;
+        if (RequireGame() is not { } game) return;
         SetStatus(L.T("Getting mod details…"));
         var files = await _api.GetModFilesAsync(modId, _closing.Token);
-        if (modId == SelfModId) files = files.Where(IsInGameMenuFile).ToList(); // from the game, only the in-game menu's file makes sense
-        var file = files.FirstOrDefault(f => f.IsCurrent && f.Primary) ?? files.FirstOrDefault(f => f.IsCurrent) ?? files.FirstOrDefault();
+        if (modId == SelfModId)
+        {
+            // From the game, only the in-game menu's file makes sense: the build for this BepInEx.
+            files = files.Where(IsInGameMenuFile).ToList();
+            var major = BepInExManager.MajorOf(game) is 5 ? 5 : 6;
+            var match = files.Where(f => f.IsCurrent && GameInstall.MenuFileMajor(f.Name) == major).ToList();
+            if (match.Count > 0 && fileId == null) files = match;
+        }
+        var file = (fileId is int fid ? files.FirstOrDefault(f => f.FileId == fid) : null)
+                   ?? files.FirstOrDefault(f => f.IsCurrent && f.Primary) ?? files.FirstOrDefault(f => f.IsCurrent) ?? files.FirstOrDefault();
         if (file == null) { SetStatus(L.T("That mod has no files to download.")); return; }
         Log(L.F("The game asked to install mod {0}.", modId));
         await InstallFromNexusAsync(modId, file.FileId);

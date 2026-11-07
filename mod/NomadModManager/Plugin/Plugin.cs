@@ -23,7 +23,7 @@ namespace NomadModManager
     public class ModManagerPlugin : BaseUnityPlugin
     {
         public const string Guid = "akorit.nomadmodmanager";
-        public const string Version = "1.0.4";
+        public const string Version = "1.1.0";
 
         internal static ModManagerPlugin I;
         internal static ManualLogSource Log;
@@ -32,6 +32,9 @@ namespace NomadModManager
         internal ModsMenu Menu;
         internal ConfigEntry<bool> AutoStart;
         internal ConfigEntry<float> Scale;
+        internal ConfigEntry<string> OpenKey;
+        internal ConfigEntry<bool> OpenWithController;
+        private UnityEngine.InputSystem.Key _openKey = UnityEngine.InputSystem.Key.F8;
 
         /// <summary>The game's main menu panel, while it exists.</summary>
         internal MainMenuPanel MainMenu;
@@ -44,6 +47,12 @@ namespace NomadModManager
             AutoStart = Config.Bind("General", "StartNewModsAutomatically", true,
                 "Start newly installed mods right away when they can run without a restart (only at the main menu).");
             Scale = Config.Bind("General", "MenuScale", 1f, "Size of the Mods menu (1 = 1080p size).");
+            OpenKey = Config.Bind("Controls", "OpenKey", "F8",
+                "Key that opens the Mods menu anywhere, also during play (a key name like F8, Home or M; None to turn it off).");
+            OpenWithController = Config.Bind("Controls", "OpenWithController", true,
+                "Hold the controller's View (Back) button for a second to open the Mods menu.");
+            ReadOpenKey();
+            OpenKey.SettingChanged += (_, __) => ReadOpenKey();
 
             Catalog = new ModCatalog();
             Catalog.SnapshotStartup();
@@ -59,7 +68,7 @@ namespace NomadModManager
                 Logger.LogWarning("NomadModManager.Patcher.dll is missing from BepInEx\\patchers — queued changes won't be applied at launch.");
 
             StartCoroutine(Poll());
-            Logger.LogInfo("Nomad Mod Manager loaded. Open it with the Mods button on the main menu.");
+            Logger.LogInfo($"Nomad Mod Manager loaded. Open it with the Mods button on the main menu, or {OpenKey.Value} anywhere.");
         }
 
         private IEnumerator Poll()
@@ -80,17 +89,26 @@ namespace NomadModManager
             }
         }
 
+        private void ReadOpenKey()
+        {
+            var v = (OpenKey.Value ?? "").Trim();
+            try { _openKey = v.Length == 0 || v.Equals("None", StringComparison.OrdinalIgnoreCase) ? UnityEngine.InputSystem.Key.None : (UnityEngine.InputSystem.Key)Enum.Parse(typeof(UnityEngine.InputSystem.Key), v, true); }
+            catch
+            {
+                // KeyCode-style names ("Alpha1", "Return") map to the Input System's.
+                _openKey = UnityEngine.InputSystem.Key.F8;
+                foreach (UnityEngine.InputSystem.Key k in Enum.GetValues(typeof(UnityEngine.InputSystem.Key)))
+                    if (string.Equals(ModsMenu.KeyCodeName(k), v, StringComparison.OrdinalIgnoreCase)) { _openKey = k; break; }
+            }
+        }
+
         private void Update()
         {
             if (AtMainMenu) MenuButton.KeepLayout();
-            if (!Menu.IsOpen) return;
-            if (!AtMainMenu) { Menu.Close(); return; }
-            try
-            {
-                var kb = UnityEngine.InputSystem.Keyboard.current;
-                if (kb != null && kb.escapeKey.wasPressedThisFrame) Menu.Close();
-            }
-            catch { }
+            // Opened from the main menu and the game has moved on (a save is loading): close.
+            if (Menu.IsOpen && Menu.OpenedFromMainMenu && !AtMainMenu) Menu.Close();
+            try { Menu.Tick(_openKey, OpenWithController.Value); }
+            catch (Exception e) { Logger.LogWarning("Mods menu input: " + e.Message); }
         }
 
         private void OnGUI()
