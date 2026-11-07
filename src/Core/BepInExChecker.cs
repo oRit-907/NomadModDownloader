@@ -534,9 +534,9 @@ public static class BepInExChecker
         {
             // Keep whatever else is there (BepInEx 6 puts BepInEx\core here); the full libraries go first.
             var paths = current.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(p => !p.Equals(DotNetFixFolder, StringComparison.OrdinalIgnoreCase)).Prepend(DotNetFixFolder);
+                .Where(p => !p.StartsWith("#") && !p.Equals(DotNetFixFolder, StringComparison.OrdinalIgnoreCase)).Prepend(DotNetFixFolder);
             var value = string.Join(";", paths);
-            text = Regex.Replace(text, @"(?im)^(\s*dll_search_path_override\s*=).*$", "${1} " + (value.Contains(';') ? "\"" + value + "\"" : value));
+            text = Regex.Replace(text, @"(?im)^([ \t]*dll_search_path_override[ \t]*=)[^\r\n]*", "${1} " + (value.Contains(';') ? "\"" + value + "\"" : value));
         }
         else if (Regex.IsMatch(text, @"(?im)^\[UnityMono\]"))
             text = Regex.Replace(text, @"(?im)^\[UnityMono\]\s*$", "[UnityMono]\r\n\r\n# Nomad Drive's mscorlib is stripped: use the full Mono libraries\r\ndll_search_path_override = " + DotNetFixFolder, RegexOptions.None, TimeSpan.FromSeconds(1));
@@ -696,7 +696,8 @@ public static class BepInExChecker
 
     private static string? IniValue(string text, string key)
     {
-        var m = Regex.Match(text, @"(?im)^\s*" + Regex.Escape(key) + @"\s*=\s*(.*?)\s*$");
+        // [ \t] not \s: an empty value mustn't run on into the next line (it used to pick up the comment below it).
+        var m = Regex.Match(text, @"(?im)^[ \t]*" + Regex.Escape(key) + @"[ \t]*=[ \t]*(.*?)[ \t\r]*$");
         return m.Success ? m.Groups[1].Value : null;
     }
 

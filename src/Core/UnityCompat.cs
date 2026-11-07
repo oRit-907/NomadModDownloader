@@ -154,13 +154,17 @@ public static class UnityCompat
         var ini = BepInExChecker.DoorstopIni(game);
         if (!File.Exists(ini)) return false;
         var text = File.ReadAllText(ini);
+        // BepInEx 5 stops at startup if a folder on this path doesn't exist yet.
+        try { Directory.CreateDirectory(OutputDir(game)); } catch { }
         var paths = SearchPaths(game);
-        if (paths.Any(p => p.Equals(CompatFolder, StringComparison.OrdinalIgnoreCase))) return false;
+        var junk = Regex.Match(text, @"(?im)^[ \t]*dll_search_path_override[ \t]*=[^\r\n]*#").Success;
+        if (!junk && paths.Any(p => p.Equals(CompatFolder, StringComparison.OrdinalIgnoreCase))) return false;
+        paths.RemoveAll(p => p.Equals(CompatFolder, StringComparison.OrdinalIgnoreCase));
         var at = paths.FindIndex(p => p.Equals(BepInExChecker.DotNetFixFolder, StringComparison.OrdinalIgnoreCase)) + 1;
         paths.Insert(at, CompatFolder);
         var value = "\"" + string.Join(";", paths) + "\"";
-        if (Regex.IsMatch(text, @"(?im)^\s*dll_search_path_override\s*="))
-            text = Regex.Replace(text, @"(?im)^(\s*dll_search_path_override\s*=).*$", m => m.Groups[1].Value + " " + value);
+        if (Regex.IsMatch(text, @"(?im)^[ \t]*dll_search_path_override[ \t]*="))
+            text = Regex.Replace(text, @"(?im)^([ \t]*dll_search_path_override[ \t]*=)[^\r\n]*", m => m.Groups[1].Value + " " + value);
         else if (Regex.IsMatch(text, @"(?im)^\[UnityMono\]"))
             text = Regex.Replace(text, @"(?im)^\[UnityMono\]\s*$", m => "[UnityMono]\r\n\r\ndll_search_path_override = " + value);
         else
@@ -177,7 +181,7 @@ public static class UnityCompat
         if (!File.Exists(ini) || !SearchPathSet(game)) return;
         var paths = SearchPaths(game).Where(p => !p.Equals(CompatFolder, StringComparison.OrdinalIgnoreCase)).ToList();
         var value = paths.Count > 1 ? "\"" + string.Join(";", paths) + "\"" : string.Join(";", paths);
-        File.WriteAllText(ini, Regex.Replace(File.ReadAllText(ini), @"(?im)^(\s*dll_search_path_override\s*=).*$", m => m.Groups[1].Value + " " + value));
+        File.WriteAllText(ini, Regex.Replace(File.ReadAllText(ini), @"(?im)^([ \t]*dll_search_path_override[ \t]*=)[^\r\n]*", m => m.Groups[1].Value + " " + value));
     }
 
     private static List<string> SearchPaths(GameInstall g)
@@ -186,9 +190,10 @@ public static class UnityCompat
         {
             var ini = BepInExChecker.DoorstopIni(g);
             if (!File.Exists(ini)) return new List<string>();
-            var m = Regex.Match(File.ReadAllText(ini), @"(?im)^\s*dll_search_path_override\s*=(.*)$");
+            var m = Regex.Match(File.ReadAllText(ini), @"(?im)^[ \t]*dll_search_path_override[ \t]*=([^\r\n]*)$");
             return m.Success
-                ? m.Groups[1].Value.Trim().Trim('"').Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(p => p.Replace('/', '\\')).ToList()
+                ? m.Groups[1].Value.Trim().Trim('"').Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Where(p => !p.StartsWith("#")).Select(p => p.Replace('/', '\\')).ToList()
                 : new List<string>();
         }
         catch { return new List<string>(); }

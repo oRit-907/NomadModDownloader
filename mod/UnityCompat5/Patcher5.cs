@@ -74,6 +74,8 @@ namespace NomadUnityCompat
         {
             if (_synced) return;
             _synced = true;
+            // BepInEx 5 lists every folder on doorstop's search path and stops if one is missing.
+            try { Directory.CreateDirectory(CompatDir); } catch { }
             try
             {
                 var version = UnityVersion();
