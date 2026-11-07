@@ -17,13 +17,13 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationVisualStyles>true</ApplicationVisualStyles>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <!-- Published as one self-contained exe, deliberately NOT compressed: compressed single-file bundles look
-         "packed" to antivirus heuristics (Nexus's scanners flagged them). Bigger download, fewer false positives. -->
+    <!-- Published as one self-contained, compressed exe. The app is only distributed through GitHub releases;
+         Nexus's scanners flagged compressed builds, so turn compression off if it's ever posted there again. -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
 
   <ItemGroup>
