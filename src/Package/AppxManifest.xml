@@ -2,10 +2,9 @@
 <!--
   Microsoft Store (MSIX) package for Nomad Mod Downloader. Built by .github/workflows/store.yml.
 
-  The three STORE_* values below come from Partner Center (Apps and games > the app > Product identity):
-    Package/Identity/Name, Package/Identity/Publisher and Package/Properties/PublisherDisplayName.
-  They must match exactly or the Store rejects the upload. Until they're filled in, the build uses test values
-  that are fine for trying the package on your own PC (Developer Mode) but can't be uploaded.
+  The three STORE_* values below are filled in by the build from Partner Center's Product identity:
+    Name oRit.NomadModDownloader, Publisher CN=C78A2360-73AE-4985-8DFA-921161CFDBC9, PublisherDisplayName Ignite Games.
+  They must match exactly or the Store rejects the upload.
   The version is taken from NomadModDownloader.csproj (X.Y.Z becomes X.Y.Z.0; the Store needs the last part to be 0).
 -->
 <Package

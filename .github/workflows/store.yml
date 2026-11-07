@@ -8,9 +8,8 @@
 #       Add-AppxPackage -Register .\AppxManifest.xml
 #     (remove it again with: Get-AppxPackage *NomadModDownloader* | Remove-AppxPackage)
 #
-# The Store identity comes from the repository variables STORE_IDENTITY_NAME, STORE_PUBLISHER and
-# STORE_PUBLISHER_DISPLAY_NAME (Settings > Secrets and variables > Actions > Variables), copied from
-# Partner Center > the app > Product identity. Without them it builds with test values, fine for trying it but not for upload.
+# The Store identity is the app's Partner Center Product identity (oRit.NomadModDownloader, published by Ignite Games).
+# The repository variables STORE_IDENTITY_NAME, STORE_PUBLISHER and STORE_PUBLISHER_DISPLAY_NAME override it if set.
 name: Store package
 
 on:
@@ -50,10 +49,9 @@ jobs:
           $ver = ($proj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
           if (-not $ver) { throw "No <Version> in the csproj" }
           $pkgVer = "$ver.0"
-          $name = if ($env:STORE_IDENTITY_NAME) { $env:STORE_IDENTITY_NAME } else { "NomadModDownloader.Test" }
-          $pub = if ($env:STORE_PUBLISHER) { $env:STORE_PUBLISHER } else { "CN=NomadModDownloaderTest" }
-          $pubName = if ($env:STORE_PUBLISHER_DISPLAY_NAME) { $env:STORE_PUBLISHER_DISPLAY_NAME } else { "Nomad Mod Downloader (test build)" }
-          if (-not $env:STORE_IDENTITY_NAME) { Write-Host "::warning::STORE_* variables aren't set: this package uses test values and can't be uploaded to the Store." }
+          $name = if ($env:STORE_IDENTITY_NAME) { $env:STORE_IDENTITY_NAME } else { "oRit.NomadModDownloader" }
+          $pub = if ($env:STORE_PUBLISHER) { $env:STORE_PUBLISHER } else { "CN=C78A2360-73AE-4985-8DFA-921161CFDBC9" }
+          $pubName = if ($env:STORE_PUBLISHER_DISPLAY_NAME) { $env:STORE_PUBLISHER_DISPLAY_NAME } else { "Ignite Games" }
 
           $m = Get-Content src/Package/AppxManifest.xml -Raw
           $m = $m.Replace('$STORE_IDENTITY_NAME$', [Security.SecurityElement]::Escape($name)).Replace('$STORE_PUBLISHER$', [Security.SecurityElement]::Escape($pub))
