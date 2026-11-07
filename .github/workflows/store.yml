@@ -59,20 +59,28 @@ jobs:
           Set-Content layout/AppxManifest.xml $m -Encoding utf8
           Copy-Item src/Package/Assets layout/Assets -Recurse
 
-          $kit = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $kit = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64" -Directory | Where-Object { Test-Path (Join-Path $_.FullName makeappx.exe) } | Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $kit) { Write-Host "::error::No Windows SDK with makeappx.exe on this runner"; exit 1 }
           $makeappx = Join-Path $kit.FullName makeappx.exe
           $makepri = Join-Path $kit.FullName makepri.exe
           Write-Host "Using $($kit.FullName)"
+          # Runs a tool; on failure shows its output as the error (so it can be read without opening the log).
+          function Run($exe, [string[]]$a) {
+            $o = & $exe @a 2>&1 | Out-String
+            Write-Host $o
+            if ($LASTEXITCODE) {
+              $msg = ($o -split "`r?`n" | Where-Object { $_ -match 'error|fail|0x8' } | Select-Object -First 12) -join ' | '
+              Write-Host "::error::$(Split-Path $exe -Leaf) $($a[0]) failed ($LASTEXITCODE): $msg"
+              exit 1
+            }
+          }
 
           # resources.pri: picks the right logo size for each screen scale.
-          & $makepri createconfig /cf priconfig.xml /dq en-US /o
-          if ($LASTEXITCODE) { throw "makepri createconfig failed" }
-          & $makepri new /pr layout /cf priconfig.xml /mn layout/AppxManifest.xml /of layout/resources.pri /o
-          if ($LASTEXITCODE) { throw "makepri new failed" }
+          Run $makepri @('createconfig', '/cf', 'priconfig.xml', '/dq', 'en-US', '/o')
+          Run $makepri @('new', '/pr', (Resolve-Path layout).Path, '/cf', 'priconfig.xml', '/mn', (Resolve-Path layout/AppxManifest.xml).Path, '/of', (Join-Path (Resolve-Path layout).Path 'resources.pri'), '/o')
 
           New-Item -ItemType Directory out | Out-Null
-          & $makeappx pack /d layout /p "out/NomadModDownloader-$pkgVer-x64.msix" /o
-          if ($LASTEXITCODE) { throw "makeappx pack failed" }
+          Run $makeappx @('pack', '/d', (Resolve-Path layout).Path, '/p', (Join-Path (Resolve-Path out).Path "NomadModDownloader-$pkgVer-x64.msix"), '/o')
           Compress-Archive -Path layout/* -DestinationPath "out/NomadModDownloader-$pkgVer-layout.zip"
           "PKGVER=$pkgVer" | Out-File $env:GITHUB_ENV -Append
 
