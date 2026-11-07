@@ -602,6 +602,13 @@ internal sealed partial class MainForm : Form
         {
             var major = BepInExManager.Check(g).Major;
             if (major == 0 || g.IsRunning()) return;
+            // After switching BepInEx, Unity Compatibility's patcher is the other version's build: swap it (no download).
+            if (UnityCompat.PatcherInstalled(g) && !UnityCompat.PatcherMatches(g))
+            {
+                UnityCompat.InstallPatcher(g);
+                UnityCompat.EnsureSearchPath(g);
+                Log(L.F("Switched Unity Compatibility to the BepInEx {0} build.", major));
+            }
             if (major == 6 && (!BepInExCompat.IsInstalled(g) || BepInExCompat.IsOutdated(g)))
             {
                 var w = BepInExCompat.Install(g);

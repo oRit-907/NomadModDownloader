@@ -226,7 +226,7 @@ public static class BepInExChecker
         }
 
         // Unity Compatibility: the game's Unity files are stripped, so mods calling Unity code the game never uses fail.
-        if (major == 6 && status.State != BepInExState.NotInstalled)
+        if (major is 5 or 6 && status.State != BepInExState.NotInstalled)
         {
             List<UnityCompat.ModNeed> needs;
             try { needs = UnityCompat.ScanMods(game); } catch { needs = new(); }
@@ -550,8 +550,13 @@ public static class BepInExChecker
     {
         var needsFix = CorlibIsStripped(GameCorlib(game)) == true;
         var major = BepInExManager.MajorOf(game);
-        var compat = major == 6 && UnityCompat.PatcherInstalled(game) ? UnityCompat.CompatFolder + ";" : "";
-        var search = major == 6 ? (needsFix ? "\"" + DotNetFixFolder + ";" + compat + "BepInEx\\core\"" : "\"" + compat + "BepInEx\\core\"") : needsFix ? DotNetFixFolder : "";
+        var compat = UnityCompat.PatcherInstalled(game) ? UnityCompat.CompatFolder : null;
+        // BepInEx 6 also needs its core folder on the path; BepInEx 5 finds its own.
+        var parts = new List<string>();
+        if (needsFix) parts.Add(DotNetFixFolder);
+        if (compat != null) parts.Add(compat);
+        if (major == 6) parts.Add("BepInEx\\core");
+        var search = parts.Count > 1 ? "\"" + string.Join(";", parts) + "\"" : string.Join(";", parts);
         var text = "# Written by Nomad Mod Downloader\r\n[General]\r\n\r\n# Enable Doorstop?\r\nenabled = true\r\n\r\n# Path to the assembly to load and execute\r\ntarget_assembly = " + PreloaderFor(major) + "\r\n\r\n" +
                    "redirect_output_log = false\r\n\r\nboot_config_override =\r\n\r\nignore_disable_switch = false\r\n\r\n[UnityMono]\r\n\r\n" +
                    (needsFix ? "# Nomad Drive's mscorlib is stripped: use the full Mono libraries\r\n" : "") + "dll_search_path_override = " + search +

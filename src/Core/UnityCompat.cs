@@ -27,7 +27,18 @@ public static class UnityCompat
     public static bool PatcherInstalled(GameInstall g) => File.Exists(PatcherDll(g));
     public static bool LibsInstalled(GameInstall g) => LibsDir(g) is { } d && Directory.Exists(d) && Directory.EnumerateFiles(d, "UnityEngine*.dll").Any();
     public static bool SearchPathSet(GameInstall g) => SearchPaths(g).Any(p => p.Equals(CompatFolder, StringComparison.OrdinalIgnoreCase));
-    public static bool IsInstalled(GameInstall g) => PatcherInstalled(g) && LibsInstalled(g) && SearchPathSet(g);
+    public static bool IsInstalled(GameInstall g) => PatcherInstalled(g) && PatcherMatches(g) && LibsInstalled(g) && SearchPathSet(g);
+
+    /// <summary>Which BepInEx the installed patcher is built for (5 or 6), 0 if unknown.</summary>
+    public static int PatcherMajor(GameInstall g)
+    {
+        if (!PatcherInstalled(g)) return 0;
+        var refs = ModLoadDoctor.References(PatcherDll(g));
+        return refs.Contains("BepInEx.Preloader.Core") || refs.Contains("BepInEx.Core") ? 6 : refs.Contains("BepInEx") ? 5 : 0;
+    }
+
+    /// <summary>The installed patcher is the build for the BepInEx in the game (after switching BepInEx it isn't).</summary>
+    public static bool PatcherMatches(GameInstall g) => PatcherMajor(g) is var m && (m == 0 || m == BepInExManager.MajorOf(g));
 
     /// <summary>The restored modules exist and were built for this Unity version.</summary>
     public static bool IsBuilt(GameInstall g)
@@ -57,7 +68,7 @@ public static class UnityCompat
         catch { return null; }
     }
 
-    public static bool IsOutdated(GameInstall g) => PatcherInstalled(g) && Bundled() is { } b && Installed(g) is { } i && i < b;
+    public static bool IsOutdated(GameInstall g) => PatcherInstalled(g) && (!PatcherMatches(g) || (Bundled() is { } b && Installed(g) is { } i && i < b));
 
     /// <summary>The game's Unity version (e.g. 6000.0.73f1), read the way BepInEx does.</summary>
     public static string? UnityVersion(GameInstall g)
@@ -123,7 +134,7 @@ public static class UnityCompat
     public static List<string> InstallPatcher(GameInstall game)
     {
         var written = new List<string>();
-        using var zip = Open();
+        using var zip = Open(BepInExManager.MajorOf(game) == 5 ? 5 : 6);
         foreach (var e in zip.Entries)
         {
             if (e.FullName.EndsWith("/") || e.Name.Length == 0 || e.Name == "version.txt") continue;
@@ -227,7 +238,8 @@ public static class UnityCompat
         return result;
     }
 
-    private static ZipArchive Open() =>
-        new(typeof(UnityCompat).Assembly.GetManifestResourceStream("Assets.UnityCompat.zip")
+    /// <summary>The patcher for a BepInEx version: BepInEx 6's (default) or BepInEx 5's.</summary>
+    private static ZipArchive Open(int major = 6) =>
+        new(typeof(UnityCompat).Assembly.GetManifestResourceStream(major == 5 ? "Assets.UnityCompat5.zip" : "Assets.UnityCompat.zip")
             ?? throw new InvalidOperationException("The app is missing its Unity Compatibility files."), ZipArchiveMode.Read);
 }

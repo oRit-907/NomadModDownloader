@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The BepInEx 5 build of Unity Compatibility: the same restore (../UnityCompat/CompatCache.cs, UnityMerger.cs)
+       run by a BepInEx 5 preloader patcher. Build: uses ../BepInEx5Compat/lib/bep5. -->
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>NomadUnityCompat</AssemblyName>
+    <RootNamespace>NomadUnityCompat</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Version>1.0.0</Version>
+    <Company>AkoRit</Company>
+    <Authors>AkoRit</Authors>
+    <DebugType>none</DebugType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <Lib>$(MSBuildThisFileDirectory)../BepInEx5Compat/lib/bep5/</Lib>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Patcher5.cs" />
+    <Compile Include="../UnityCompat/CompatCache.cs" />
+    <Compile Include="../UnityCompat/UnityMerger.cs" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="BepInEx" HintPath="$(Lib)BepInEx.dll" Private="false" />
+    <Reference Include="Mono.Cecil" HintPath="$(Lib)Mono.Cecil.dll" Private="false" />
+  </ItemGroup>
+</Project>
