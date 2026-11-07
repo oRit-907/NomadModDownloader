@@ -99,7 +99,7 @@ internal sealed partial class MainForm : Form
 
         BuildUi();
         HandleCreated += (_, _) => Theme.DarkTitleBar(this);
-        Shown += async (_, _) => await StartupAsync();
+        Shown += async (_, _) => { StartGamepad(); await StartupAsync(); };
         FormClosed += (_, _) => _closing.Cancel();
         Resize += (_, _) => { _bgCache?.Dispose(); _bgCache = null; };
     }

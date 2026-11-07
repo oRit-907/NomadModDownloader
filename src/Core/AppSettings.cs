@@ -84,6 +84,9 @@ public sealed class AppSettings
     /// <summary>Check installed mods for updates when the app starts.</summary>
     public bool CheckModUpdatesOnStart { get; set; } = true;
 
+    /// <summary>Drive the app with an Xbox-style controller (only while the app is the window in front).</summary>
+    public bool ControllerSupport { get; set; } = true;
+
     public string? GetGitHubToken() => Unprotect(ProtectedGitHubToken);
     public void SetGitHubToken(string? token) => ProtectedGitHubToken = string.IsNullOrWhiteSpace(token) ? null : Protect(token.Trim());
 
