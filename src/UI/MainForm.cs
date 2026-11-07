@@ -311,12 +311,47 @@ internal sealed partial class MainForm : Form
     private readonly Dictionary<string, Control> _pageControls = new();
     private string _current = "", _returnPage = "Browse mods";
 
+    /// <summary>Each page's heading, like the in-game Mods menu: a title and a line under it.</summary>
+    private static string PageSubtitle(string name) => name switch
+    {
+        "Browse mods" => L.T("Nomad Drive mods on Nexus Mods"),
+        "Installed" => L.T("Mods in BepInEx\\plugins"),
+        "Mod settings" => L.T("The settings of your installed mods"),
+        "Profiles" => L.T("Saved sets of mods to switch between"),
+        "Saves" => L.T("Your Nomad Drive saves"),
+        "Problems" => L.T("What went wrong at the last game start"),
+        "Check BepInEx" => L.T("Is the mod loader set up right?"),
+        "Activity" => L.T("What this app has done"),
+        _ => "",
+    };
+
     private void AddPage(string name, Control page)
     {
-        page.Dock = DockStyle.Fill;
-        page.Visible = false;
-        _pageHost.Controls.Add(page);
-        _pageControls[name] = page;
+        Control shown = page;
+        if (name != "Nexus")
+        {
+            // One big panel per page with the heading inside, like the in-game menu. A page that is a panel itself
+            // becomes see-through inside it.
+            var frame = new GlassPanel { Padding = new Padding(26, 20, 26, 18) };
+            var head = new Panel { Dock = DockStyle.Top, Height = Theme.H2.Height * 2 + Theme.Small.Height + 18, BackColor = Color.Transparent };
+            using var big = new Font(Theme.H2.FontFamily, Theme.H2.Size * 1.5f, Theme.H2.Style);
+            var title = new Label { Text = L.T(name), Font = new Font(Theme.H2.FontFamily, Theme.H2.Size * 1.5f, Theme.H2.Style), ForeColor = Theme.Text, BackColor = Color.Transparent, AutoSize = true, Location = new Point(0, 0) };
+            var sub = new Label { Text = PageSubtitle(name), Font = Theme.Small, ForeColor = Theme.Muted, BackColor = Color.Transparent, AutoSize = true };
+            title.SizeChanged += (_, _) => sub.Location = new Point(2, title.Bottom);
+            head.Controls.Add(title);
+            head.Controls.Add(sub);
+            head.Height = big.Height + Theme.Small.Height + 16;
+            if (page is GlassPanel gp) { gp.Fill = Color.Transparent; gp.Padding = new Padding(0); }
+            else foreach (var inner in page.Controls.OfType<GlassPanel>()) inner.Border = Theme.Line; // a thin edge shows the cards inside the page
+            page.Dock = DockStyle.Fill;
+            frame.Controls.Add(page);
+            frame.Controls.Add(head);
+            shown = frame;
+        }
+        shown.Dock = DockStyle.Fill;
+        shown.Visible = false;
+        _pageHost.Controls.Add(shown);
+        _pageControls[name] = shown;
     }
 
     private void ShowPage(string name)
@@ -449,10 +484,15 @@ internal sealed partial class MainForm : Form
         return page;
     }
 
+    private string _installedFilter = "";
+    private int _installedCount;
+
     private Control BuildInstalledPage()
     {
         var page = new GlassPanel { Padding = new Padding(16, 16, 16, 12) };
         var toolbar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, WrapContents = true, Padding = new Padding(0, 0, 0, 10) };
+        var find = new TextBox { PlaceholderText = L.T("Find an installed mod — just start typing"), Font = Theme.Body };
+        find.TextChanged += (_, _) => { _installedFilter = find.Text.Trim(); RefreshInstalled(); };
         var check = Theme.Button(L.T("Check for updates"), true);
         check.Click += async (_, _) => await RunExclusive(() => CheckUpdatesAsync());
         _updateAllButton = Theme.Button(L.T("Update all"));
@@ -467,15 +507,30 @@ internal sealed partial class MainForm : Form
         fromFile.Click += async (_, _) => await RunExclusive(InstallFromFileAsync);
         var open = Theme.Button(L.T("Open plugins folder"));
         open.Click += (_, _) => { if (_game != null) { Directory.CreateDirectory(_game.PluginsDir); Web.Open(_game.PluginsDir); } };
-        foreach (var b in new[] { check, _updateAllButton, _updateButton, _toggleButton, _removeButton, fromFile, open }) { b.Margin = new Padding(0, 0, 8, 6); toolbar.Controls.Add(b); }
+        // Each mod's own buttons are on its row (like the in-game Mods menu); these stay for the controller and keyboard.
+        var findBox = Field(find, 330);
+        findBox.Margin = new Padding(0, 0, 14, 6);
+        toolbar.Controls.Add(findBox);
+        foreach (var b in new[] { check, _updateAllButton, fromFile, open }) { b.Margin = new Padding(0, 0, 8, 6); toolbar.Controls.Add(b); }
 
-        _installedList = Theme.List();
-        _installedList.Columns.Add(L.T("Mod"), 260);
-        _installedList.Columns.Add(L.T("Version"), 90);
-        _installedList.Columns.Add(L.T("Status"), 160);
-        _installedList.Columns.Add(L.T("Last game start"), 210);
-        _installedList.Columns.Add(L.T("Installed to"), 260);
-        _installedList.Columns.Add(L.T("Installed"), 110).Tag = "optional";
+        var cards = new CardList { VersionColumn = 1, LineColumns = new[] { 2, 3, 4 } };
+        cards.ButtonsFor = item => item.Tag switch
+        {
+            InstalledMod m => new[] { m.ModId > 0 ? L.T("Page") : null, m.Update != null ? L.T("Update") : null, m.Disabled ? L.T("Enable") : L.T("Disable"), L.T("Remove") }
+                .Where(s => s != null).Select(s => s!).ToList(),
+            Untracked u => new List<string> { u.Disabled ? L.T("Enable") : L.T("Disable") },
+            _ => new List<string>(),
+        };
+        cards.ButtonClicked += async (item, label) =>
+        {
+            UpdateInstalledButtons();
+            if (label == L.T("Page") && item.Tag is InstalledMod pm) await OpenModPageAsync(pm.ModId);
+            else if (label == L.T("Update")) await UpdateSelectedAsync();
+            else if (label == L.T("Enable") || label == L.T("Disable")) ToggleSelected();
+            else if (label == L.T("Remove")) await RunExclusive(UninstallSelectedAsync);
+        };
+        _installedList = cards;
+        _installedList.Columns.Add(""); _installedList.Columns.Add(""); _installedList.Columns.Add(""); _installedList.Columns.Add(""); _installedList.Columns.Add("");
         _installedList.SelectedIndexChanged += (_, _) => { UpdateInstalledButtons(); ShowLoadDetail(); };
 
         var hint = new Label
@@ -1398,6 +1453,9 @@ internal sealed partial class MainForm : Form
     // Installed tab
     // =====================================================================
 
+    private bool MatchesInstalledFilter(string name, string author) =>
+        _installedFilter.Length == 0 || name.Contains(_installedFilter, StringComparison.OrdinalIgnoreCase) || author.Contains(_installedFilter, StringComparison.OrdinalIgnoreCase);
+
     private void RefreshInstalled()
     {
         if (_installedList == null) return;
@@ -1421,6 +1479,7 @@ internal sealed partial class MainForm : Form
             item.SubItems.Add(Fmt.Date(m.InstalledAt));
             var author = m.Author.Length > 0 ? m.Author
                 : _knownByName.Values.FirstOrDefault(k => k.ModId == m.ModId && m.ModId > 0)?.Author ?? "";
+            if (!MatchesInstalledFilter(m.Name, author)) continue;
             rows.Add((author, item));
         }
         if (_game != null)
@@ -1440,18 +1499,22 @@ internal sealed partial class MainForm : Form
                 var names = new List<string> { folderName, Path.GetFileNameWithoutExtension(folderName) };
                 names.AddRange(UntrackedPluginNames(rel));
                 var author = names.Select(n => _knownByName.TryGetValue(NameKey(n), out var k) ? k.Author : "").FirstOrDefault(a => a.Length > 0) ?? "";
+                if (!MatchesInstalledFilter(string.Join(" ", names), author)) continue;
                 rows.Add((author, item));
             }
         }
 
         var unknown = L.T("Unknown author");
-        foreach (var g in rows.GroupBy(r => r.Author.Length > 0 ? r.Author : unknown)
+        // One group per author whatever the capitals; shown with the most used spelling (fewest capitals on a tie).
+        foreach (var g in rows.GroupBy(r => (r.Author.Length > 0 ? r.Author : unknown).ToLowerInvariant())
+                              .Select(g => (Key: g.Select(r => r.Author.Length > 0 ? r.Author : unknown).GroupBy(a => a).OrderByDescending(a => a.Count()).ThenBy(a => a.Key.Count(char.IsUpper)).First().Key, Rows: g.ToList()))
                               .OrderBy(g => g.Key == unknown ? 1 : 0).ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
         {
-            _installedList.Items.Add(new ListViewItem($"{g.Key}  ({g.Count()})") { Tag = new ListHeader($"{g.Key}  ({g.Count()})") });
-            foreach (var r in g) _installedList.Items.Add(r.Item);
+            _installedList.Items.Add(new ListViewItem($"{g.Key}  ({g.Rows.Count})") { Tag = new ListHeader($"{g.Key}  ({g.Rows.Count})") });
+            foreach (var r in g.Rows) _installedList.Items.Add(r.Item);
         }
         _installedList.EndUpdate();
+        if (_installedFilter.Length == 0) { _installedCount = rows.Count; if (_nav.TryGetValue("Installed", out var navItem)) navItem.Text = NavText("Installed"); }
         UpdateInstalledButtons();
         ShowLoadDetail();
         var notStarted = _loadDiag.Values.Count(d => d.State == LoadState.DidntStart);

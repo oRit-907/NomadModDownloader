@@ -438,3 +438,176 @@ public sealed class ScrollStack : FlowLayoutPanel
     protected override void OnScroll(ScrollEventArgs se) { base.OnScroll(se); Invalidate(true); }
     protected override void OnMouseWheel(MouseEventArgs e) { base.OnMouseWheel(e); Invalidate(true); }
 }
+
+/// <summary>
+/// A list drawn like the in-game Mods menu: author headings in amber, and each mod as a rounded card with its name
+/// and version on top, a status line under it, and its buttons on the right. Still a ListView underneath, so
+/// selection, keyboard and controller navigation work as before.
+/// Text comes from the item: line 1 = Text + SubItems[VersionColumn], line 2 = the SubItems in LineColumns (their colours).
+/// </summary>
+internal sealed class CardList : ListView
+{
+    public int VersionColumn { get; set; } = 1;
+    public int[] LineColumns { get; set; } = Array.Empty<int>();
+    /// <summary>The buttons for a row (left to right).</summary>
+    public Func<ListViewItem, IReadOnlyList<string>> ButtonsFor { get; set; } = _ => Array.Empty<string>();
+    /// <summary>A row's button was pressed (the row is selected first).</summary>
+    public event Action<ListViewItem, string>? ButtonClicked;
+
+    private const int RowH = 76, HeadH = 76;
+    private Point _mouse = new(-1, -1);
+
+    public CardList()
+    {
+        View = View.Details;
+        HeaderStyle = ColumnHeaderStyle.None;
+        FullRowSelect = true;
+        HideSelection = false;
+        MultiSelect = false;
+        BorderStyle = BorderStyle.None;
+        BackColor = Theme.Panel;
+        ForeColor = Theme.Text;
+        Font = Theme.Body;
+        OwnerDraw = true;
+        Dock = DockStyle.Fill;
+        Columns.Add("", 400);
+        SmallImageList = new ImageList { ImageSize = new Size(1, RowH) };
+        DoubleBuffered = true;
+        DrawColumnHeader += (_, e) => e.DrawDefault = false;
+        DrawSubItem += (_, _) => { }; // the whole card is drawn in DrawItem
+        DrawItem += (_, e) => Draw(e);
+        ItemSelectionChanged += (_, e) => { if (e.IsSelected && e.Item?.Tag is ListHeader) e.Item.Selected = false; };
+        HandleCreated += (_, _) => { Theme.DarkScrollbars(this); BeginInvoke(Fit); };
+        ClientSizeChanged += (_, _) => Fit();
+        SizeChanged += (_, _) => Fit();
+    }
+
+    private void Fit()
+    {
+        if (Columns.Count > 0 && ClientSize.Width > 0 && Columns[0].Width != ClientSize.Width) Columns[0].Width = ClientSize.Width;
+    }
+
+    private static readonly TextFormatFlags One = TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+
+    private List<(string Label, Rectangle Rect)> ButtonRects(ListViewItem item, Rectangle card)
+    {
+        var result = new List<(string, Rectangle)>();
+        var labels = item.Tag is ListHeader ? Array.Empty<string>() : ButtonsFor(item);
+        var x = card.Right - 14;
+        foreach (var label in labels.Reverse())
+        {
+            var w = TextRenderer.MeasureText(label, Theme.Bold).Width + 30;
+            x -= w;
+            result.Insert(0, (label, new Rectangle(x, card.Y + (card.Height - 38) / 2, w, 38)));
+            x -= 8;
+        }
+        return result;
+    }
+
+    private static Rectangle CardRect(Rectangle row) => new(row.X + 6, row.Y + 4, row.Width - 12, row.Height - 8);
+
+    private void Draw(DrawListViewItemEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using (var bg = new SolidBrush(Theme.Panel)) g.FillRectangle(bg, e.Bounds);
+        var item = e.Item!;
+        if (item.Tag is ListHeader h)
+        {
+            var tr = new Rectangle(e.Bounds.X + 8, e.Bounds.Y, e.Bounds.Width - 16, e.Bounds.Height - 10);
+            TextRenderer.DrawText(g, h.Text, Theme.H2, tr, Theme.Accent, TextFormatFlags.Bottom | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            return;
+        }
+        var card = CardRect(e.Bounds);
+        var hover = card.Contains(_mouse);
+        using (var path = Theme.Rounded(card, 10))
+        using (var b = new SolidBrush(item.Selected ? Theme.Line : hover ? Theme.Card : Theme.Row))
+            g.FillPath(b, path);
+        if (item.Selected) using (var path = Theme.Rounded(card, 10)) using (var p = new Pen(Theme.Accent, 1.5f)) g.DrawPath(p, path);
+
+        var buttons = ButtonRects(item, card);
+        var textRight = (buttons.Count > 0 ? buttons[0].Rect.X : card.Right) - 12;
+        var x = card.X + 18;
+        // line 1: name, then the version in grey
+        var nameColor = item.ForeColor == Theme.Muted ? Theme.Muted : Theme.Text;
+        var nameSize = TextRenderer.MeasureText(g, item.Text, Theme.Title, Size.Empty, One);
+        var nameRect = new Rectangle(x, card.Y + 9, Math.Min(nameSize.Width, textRight - x), nameSize.Height);
+        TextRenderer.DrawText(g, item.Text, Theme.Title, nameRect, nameColor, One);
+        var ver = VersionColumn < item.SubItems.Count ? item.SubItems[VersionColumn].Text : "";
+        if (ver.Length > 0 && nameRect.Right + 10 < textRight)
+        {
+            var v = ver.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? ver : "v" + ver;
+            TextRenderer.DrawText(g, v, Theme.Small, new Rectangle(nameRect.Right + 8, card.Y + 15, textRight - nameRect.Right - 8, 22), Theme.Muted, One);
+        }
+        // line 2: status pieces, each in its own colour, joined by dots
+        var lx = x;
+        var ly = card.Y + card.Height - 30;
+        var first = true;
+        foreach (var c in LineColumns)
+        {
+            if (c >= item.SubItems.Count) continue;
+            var s = item.SubItems[c].Text;
+            if (string.IsNullOrWhiteSpace(s) || lx >= textRight) continue;
+            if (!first)
+            {
+                TextRenderer.DrawText(g, "  ·  ", Theme.Small, new Rectangle(lx, ly, 40, 22), Theme.Muted, One);
+                lx += TextRenderer.MeasureText(g, "  ·  ", Theme.Small, Size.Empty, One).Width;
+            }
+            var color = item.SubItems[c].ForeColor;
+            if (color == ForeColor || color == Theme.Text || color.IsEmpty) color = Theme.Muted;
+            var font = first ? Theme.Bold : Theme.Small;
+            var w = Math.Min(TextRenderer.MeasureText(g, s, font, Size.Empty, One).Width, textRight - lx);
+            TextRenderer.DrawText(g, s, font, new Rectangle(lx, ly - (first ? 1 : 0), w, 22), color, One);
+            lx += w;
+            first = false;
+        }
+        // buttons
+        foreach (var (label, r) in buttons)
+        {
+            var over = r.Contains(_mouse);
+            using var path = Theme.Rounded(r, 9);
+            using var b = new SolidBrush(over ? Theme.Edge : Theme.Line);
+            g.FillPath(b, path);
+            TextRenderer.DrawText(g, label, Theme.Bold, r, Theme.Text, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        }
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        var old = GetItemAt(_mouse.X, _mouse.Y);
+        _mouse = e.Location;
+        var now = GetItemAt(e.X, e.Y);
+        if (old != null) Invalidate(old.Bounds);
+        if (now != null && now != old) Invalidate(now.Bounds);
+        else if (now != null) Invalidate(now.Bounds);
+        Cursor = now != null && ButtonRects(now, CardRect(now.Bounds)).Any(b => b.Rect.Contains(e.Location)) ? Cursors.Hand : Cursors.Default;
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        var old = GetItemAt(_mouse.X, _mouse.Y);
+        _mouse = new Point(-1, -1);
+        if (old != null) Invalidate(old.Bounds);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (e.Button != MouseButtons.Left) return;
+        var item = GetItemAt(e.X, e.Y);
+        if (item == null || item.Tag is ListHeader) return;
+        foreach (var (label, r) in ButtonRects(item, CardRect(item.Bounds)))
+            if (r.Contains(e.Location))
+            {
+                item.Selected = true;
+                item.Focused = true;
+                ButtonClicked?.Invoke(item, label);
+                return;
+            }
+    }
+
+    /// <summary>Presses the selected row's first button (controller A / Enter on a row).</summary>
+    public IReadOnlyList<string> SelectedButtons => SelectedItems.Count > 0 ? ButtonsFor(SelectedItems[0]) : Array.Empty<string>();
+}

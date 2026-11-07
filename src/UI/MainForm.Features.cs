@@ -23,7 +23,7 @@ internal sealed partial class MainForm
     }
 
     private string NavText(string page) =>
-        (_current == page ? "› " : "") + L.T(page) + (_badges.TryGetValue(page, out var b) ? "  · " + b : "");
+        L.T(page) + (page == "Installed" && _installedCount > 0 ? $" ({_installedCount})" : "") + (_badges.TryGetValue(page, out var b) ? "  · " + b : "");
 
     // =====================================================================
     // Play
