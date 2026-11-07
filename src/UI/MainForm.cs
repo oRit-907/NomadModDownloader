@@ -553,6 +553,7 @@ internal sealed partial class MainForm : Form
         RefreshGame();
         RefreshInstalled();
         if (announce) Log(L.T("Found Nomad Drive at ") + g.Root);
+        EnsureCompatLayer(g);
         CheckGameVersion(g);
         _ = LoadGameArtAsync(g);
     }
@@ -588,6 +589,33 @@ internal sealed partial class MainForm : Form
         if (bg != null) { _bgImage?.Dispose(); _bgImage = bg; _bgCache?.Dispose(); _bgCache = null; }
         if (logo != null) { _logo.Image?.Dispose(); _logo.Image = logo; }
         Invalidate(true);
+    }
+
+    /// <summary>
+    /// Each BepInEx gets support for the other's mods, without asking: BepInEx 6 gets BepInEx 5 support and
+    /// BepInEx 5 gets BepInEx 6 support (installed when missing, updated when this app has a newer copy).
+    /// Not while the game is running: its files are in use.
+    /// </summary>
+    private void EnsureCompatLayer(GameInstall g)
+    {
+        try
+        {
+            var major = BepInExManager.Check(g).Major;
+            if (major == 0 || g.IsRunning()) return;
+            if (major == 6 && (!BepInExCompat.IsInstalled(g) || BepInExCompat.IsOutdated(g)))
+            {
+                var w = BepInExCompat.Install(g);
+                BepInEx6Support.Remove(g);
+                Log(L.F("Installed BepInEx 5 support, so BepInEx 5 mods run on BepInEx 6 ({0} files).", w.Count));
+            }
+            else if (major == 5 && (!BepInEx6Support.IsInstalled(g) || BepInEx6Support.IsOutdated(g)))
+            {
+                var w = BepInEx6Support.Install(g);
+                BepInExCompat.Remove(g);
+                Log(L.F("Installed BepInEx 6 support, so BepInEx 6 mods run on BepInEx 5 ({0} files).", w.Count));
+            }
+        }
+        catch (Exception e) { Log(L.F("Couldn't set up support for the other BepInEx's mods: {0}", e.Message)); }
     }
 
     private void RefreshGame()
