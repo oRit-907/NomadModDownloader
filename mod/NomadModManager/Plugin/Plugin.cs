@@ -74,8 +74,39 @@ namespace NomadModManager
             if (!File.Exists(Path.Combine(Paths.PatcherPluginPath, "NomadModManager.Patcher.dll")))
                 Logger.LogWarning("NomadModManager.Patcher.dll is missing from BepInEx\\patchers — queued changes won't be applied at launch.");
 
+            EndOnQuit = Config.Bind("General", "EndGameAfterQuit", true,
+                "Make sure the game really ends after you quit. Some mods leave work running that keeps the game open in the background (Steam still shows it as running).");
+            Application.quitting += OnQuitting;
+
             StartCoroutine(Poll());
             Logger.LogInfo("Nomad Mod Manager loaded. Open it with the Mods button on the main menu or in the pause menu.");
+        }
+
+        internal ConfigEntry<bool> EndOnQuit;
+        private static bool _quitWatch;
+
+        /// <summary>
+        /// Unity has finished quitting at this point except for whatever other mods left running.
+        /// If the process is still here a few seconds later, something is holding it open: end it.
+        /// </summary>
+        private void OnQuitting()
+        {
+            if (_quitWatch || EndOnQuit == null || !EndOnQuit.Value) return;
+            _quitWatch = true;
+            Logger.LogInfo("Game is quitting; will make sure it ends.");
+            var t = new System.Threading.Thread(() =>
+            {
+                System.Threading.Thread.Sleep(6000);
+                try
+                {
+                    File.AppendAllText(Path.Combine(Pending.Dir(Paths.GameRootPath), "quit.log"),
+                        DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  The game was still running 6 seconds after quitting, so Nomad Mod Manager ended it.\r\n");
+                }
+                catch { }
+                try { System.Diagnostics.Process.GetCurrentProcess().Kill(); }
+                catch { try { Environment.Exit(0); } catch { } }
+            }) { IsBackground = true, Name = "NomadModManager quit watch" };
+            t.Start();
         }
 
         private IEnumerator Poll()
