@@ -872,7 +872,9 @@ namespace NomadModManager
             var mods = _cat.Mods.Where(m => _filter.Length == 0 || m.Name.IndexOf(_filter, StringComparison.OrdinalIgnoreCase) >= 0
                                                || m.Author.IndexOf(_filter, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
             // Grouped by author; mods whose author isn't known go last.
-            var groups = mods.GroupBy(m => m.Author.Length > 0 ? m.Author : ModCatalog.UnknownAuthor)
+            // One group per author whatever the capitals ("AKoRit" and "AkoRit" are the same person).
+            var groups = mods.GroupBy(m => (m.Author.Length > 0 ? m.Author : ModCatalog.UnknownAuthor).ToLowerInvariant())
+                .Select(g => (Key: AuthorName(g.Select(m => m.Author).ToList()), Mods: g.ToList()))
                 .OrderBy(g => g.Key == ModCatalog.UnknownAuthor ? 1 : 0).ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase).ToList();
             const float gap = 8;
             var view = new Rect(r.x, y + 4 * _s, r.width, r.yMax - y - 4 * _s);
@@ -884,8 +886,8 @@ namespace NomadModManager
                 GUI.Label(new Rect(0, 0, inner.width, 40 * _s), _filter.Length > 0 ? "No installed mod matches \"" + _filter + "\"." : "No mods yet. Find some under Browse mods.", Tint(_body, CMuted));
             foreach (var g in groups)
             {
-                Section(ref ry, inner.width, g.Key + "  (" + g.Count() + ")");
-                foreach (var m in g)
+                Section(ref ry, inner.width, g.Key + "  (" + g.Mods.Count + ")");
+                foreach (var m in g.Mods)
                 {
                     var h = heights[m];
                     if (ry + h > -40 && ry < view.height + 40) ModRow(new Rect(0, ry, inner.width, h), m);
@@ -1150,6 +1152,14 @@ namespace NomadModManager
             || k == UnityEngine.InputSystem.Key.LeftMeta || k == UnityEngine.InputSystem.Key.RightMeta;
 
         /// <summary>Input System key → the UnityEngine.KeyCode name BepInEx config files use.</summary>
+        /// <summary>How to show an author written different ways: the most used spelling, then the one with the fewest capitals.</summary>
+        private static string AuthorName(List<string> names)
+        {
+            var known = names.Where(n => n.Length > 0).ToList();
+            if (known.Count == 0) return ModCatalog.UnknownAuthor;
+            return known.GroupBy(n => n).OrderByDescending(g => g.Count()).ThenBy(g => g.Key.Count(char.IsUpper)).First().Key;
+        }
+
         internal static string KeyCodeName(UnityEngine.InputSystem.Key k)
         {
             var n = k.ToString();

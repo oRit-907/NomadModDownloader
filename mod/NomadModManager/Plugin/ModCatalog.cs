@@ -160,6 +160,18 @@ namespace NomadModManager
                         if (m.Name.Length == 0) { m.Name = info.Metadata.Name; m.Version = info.Metadata.Version.ToString(); }
                     }
                 }
+                // ...and the ones the other BepInEx started (BepInEx 5 mods on BepInEx 6, or the other way round)
+                foreach (var o in Bep.OtherPlugins)
+                {
+                    if (!o.Running || o.Location.Length == 0 || m.Guids.Contains(o.Guid)) continue;
+                    string loc;
+                    try { loc = Path.GetFullPath(o.Location); } catch { continue; }
+                    if (loc.Equals(full, StringComparison.OrdinalIgnoreCase) || loc.StartsWith(full + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    {
+                        m.Guids.Add(o.Guid);
+                        if (m.Name.Length == 0) { m.Name = o.Name; m.Version = o.Version; }
+                    }
+                }
                 if (m.Name.Length == 0) ReadMeta(m);
                 if (m.Name.Length == 0) m.Name = Path.GetFileNameWithoutExtension(full);
                 m.IsSelf = m.Guids.Contains(ModManagerPlugin.Guid);

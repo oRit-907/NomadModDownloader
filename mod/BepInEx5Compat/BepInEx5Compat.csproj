@@ -8,6 +8,8 @@
     <LangVersion>latest</LangVersion>
     <Version>1.0.0</Version>
     <Company>AkoRit</Company>
+    <Authors>AkoRit</Authors>
+    <Copyright>AkoRit</Copyright>
     <DebugType>none</DebugType>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <Lib>$(MSBuildThisFileDirectory)lib/</Lib>

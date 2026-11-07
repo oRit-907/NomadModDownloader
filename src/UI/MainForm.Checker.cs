@@ -136,6 +136,7 @@ internal sealed partial class MainForm
         CheckFix.UpdateBepInEx => L.T("Update BepInEx"),
         CheckFix.UpgradeToBepInEx6 => L.T("Upgrade to BepInEx 6"),
         CheckFix.InstallCompat => L.T("Install BepInEx 5 support"),
+        CheckFix.InstallCompat6 => L.T("Install BepInEx 6 support"),
         CheckFix.OpenInstalled => L.T("Open Installed"),
         CheckFix.OpenModsMenuPage => L.T("Get the right Mods menu"),
         CheckFix.WriteDoorstop => L.T("Fix doorstop_config.ini"),
@@ -223,7 +224,7 @@ internal sealed partial class MainForm
                 if (i.Fix == CheckFix.InstallUnityCompat) continue; // downloads: below
 
                 // A reinstall above already wrote a fresh doorstop_config.ini and the .NET fix.
-                if (bep != null && i.Fix is CheckFix.WriteDoorstop or CheckFix.EnableDoorstop or CheckFix.InstallCompat) continue;
+                if (bep != null && i.Fix is CheckFix.WriteDoorstop or CheckFix.EnableDoorstop or CheckFix.InstallCompat or CheckFix.InstallCompat6) continue;
                 var msg = BepInExChecker.Apply(i, game);
                 if (msg.Length > 0) done.Add(msg);
             }

@@ -63,6 +63,8 @@ public static class ModLoadDoctor
         public required HashSet<string> Assemblies { get; init; }        // every assembly name the game can find
         public int BepInExMajor { get; init; }                           // 5 or 6
         public bool HasCompat5 { get; init; }                            // BepInEx 6 with the BepInEx 5 compatibility layer
+        public bool HasCompat6 { get; init; }                            // BepInEx 5 with the BepInEx 6 compatibility layer
+        public bool HasCompat => HasCompat5 || HasCompat6;
         public Version? NetStandard { get; init; }                       // highest .NET Standard the game can load
         public bool UnityCompatReady { get; init; }                      // Unity Compatibility installed (restores stripped Unity code)
         public DateTime? UnityCompatSince { get; init; }                 // when its patcher was installed
@@ -107,6 +109,7 @@ public static class ModLoadDoctor
         AddDir(Path.Combine(game.BepInExDir, "patchers"), true);
         AddDir(game.PluginsDir, true);
         AddDir(BepInExCompat.RuntimeDir(game));
+        AddDir(BepInEx6Support.RuntimeDir(game));
         AddDir(Path.Combine(game.Root, BepInExChecker.DotNetFixFolder));
         AddDir(Path.Combine(game.Root, "MonoBleedingEdge", "lib", "mono", "4.5"));
         AddDir(Path.Combine(game.Root, "MonoBleedingEdge", "lib", "mono", "4.5", "Facades"));
@@ -118,7 +121,7 @@ public static class ModLoadDoctor
         return new Context
         {
             Game = game, Report = report, Loaded = loaded, Enabled = enabled, Disabled = disabled, Assemblies = asm,
-            BepInExMajor = major, HasCompat5 = major == 6 && BepInExCompat.IsInstalled(game), NetStandard = ns,
+            BepInExMajor = major, HasCompat5 = major == 6 && BepInExCompat.IsInstalled(game), HasCompat6 = major == 5 && BepInEx6Support.IsInstalled(game), NetStandard = ns,
             UnityCompatReady = UnityCompat.IsInstalled(game),
             UnityCompatSince = UnityCompat.PatcherInstalled(game) ? File.GetLastWriteTime(UnityCompat.PatcherDll(game)) : null,
             GameApi = new(() => Directory.Exists(UnityCompat.ManagedDir(game)) ? new GameApiScanner.GameApi(UnityCompat.ManagedDir(game)) : null),
@@ -230,6 +233,9 @@ public static class ModLoadDoctor
         if (started.Count < names.Count && ctx.HasCompat5 && ctx.LogTime is { } lt2 && File.GetLastWriteTime(BepInExCompat.PluginDll(game)) > lt2
             && BuiltFor(loadable.SelectMany(References)) == "5")
             return new LoadDiagnosis { State = LoadState.InstalledSince, Short = L.T("Waiting for a game start"), Why = L.T("BepInEx 5 support was added after the game last started, so this BepInEx 5 mod hasn't had a chance to load yet."), HowToFix = L.T("Play the game once, then check again."), Fix = LoadFix.Play, Plugins = names, Files = loadable };
+        if (started.Count < names.Count && ctx.HasCompat6 && ctx.LogTime is { } lt3 && File.GetLastWriteTime(BepInEx6Support.PluginDll(game)) > lt3
+            && BuiltFor(loadable.SelectMany(References)) == "6")
+            return new LoadDiagnosis { State = LoadState.InstalledSince, Short = L.T("Waiting for a game start"), Why = L.T("BepInEx 6 support was added after the game last started, so this BepInEx 6 mod hasn't had a chance to load yet."), HowToFix = L.T("Play the game once, then check again."), Fix = LoadFix.Play, Plugins = names, Files = loadable };
 
         if (started.Count == names.Count)
         {
@@ -252,9 +258,9 @@ public static class ModLoadDoctor
         var builtFor = BuiltFor(refs);
         if (builtFor == "il2cpp")
             return No(L.T("Made for IL2CPP games"), L.T("This mod was made for IL2CPP games. Nomad Drive is a Mono game, so it can't run here."), L.T("Make sure it's a Nomad Drive mod, and switch this one off."), LoadFix.DisableThis);
-        if (builtFor == "6" && ctx.BepInExMajor == 5)
-            return No(L.T("Made for BepInEx 6"), L.T("This mod was built for BepInEx 6, but BepInEx 5 is installed."),
-                L.T("Upgrade to BepInEx 6 in Check BepInEx. Your BepInEx 5 mods keep working there through the BepInEx 5 compatibility layer."), LoadFix.OpenChecker);
+        if (builtFor == "6" && ctx.BepInExMajor == 5 && !ctx.HasCompat6)
+            return No(L.T("Needs BepInEx 6 support"), L.T("This mod was built for BepInEx 6. BepInEx 5 runs those through the BepInEx 6 compatibility layer, which isn't installed."),
+                L.T("Open Check BepInEx and press Install BepInEx 6 support, or upgrade to BepInEx 6."), LoadFix.OpenChecker);
         if (builtFor == "5" && ctx.BepInExMajor == 6 && !ctx.HasCompat5)
             return No(L.T("Needs BepInEx 5 support"), L.T("This mod was built for BepInEx 5. BepInEx 6 runs those through the BepInEx 5 compatibility layer, which isn't installed."),
                 L.T("Open Check BepInEx and press Install BepInEx 5 support."), LoadFix.OpenChecker);
@@ -275,7 +281,7 @@ public static class ModLoadDoctor
         var crossNeeds = plugins.SelectMany(p => p.HardDependencies).Where(d => !mine.Contains(d))
             .Select(d => ctx.Enabled.FirstOrDefault(e => e.Guid.Equals(d, StringComparison.OrdinalIgnoreCase))).Where(e => e != null)
             .FirstOrDefault(e => BuiltFor(References(e!.File)) is { } other && builtFor != null && other != builtFor);
-        if (crossNeeds != null && ctx.HasCompat5)
+        if (crossNeeds != null && ctx.HasCompat)
             return No(L.F("Needs {0} (other BepInEx)", crossNeeds.Name), L.F("It needs {0}, which is built for a different BepInEx version, so the two can't see each other.", crossNeeds.Name),
                 L.F("Install versions of both mods built for the same BepInEx, or ask the authors.", crossNeeds.Name), LoadFix.UpdateThis);
 
@@ -305,7 +311,8 @@ public static class ModLoadDoctor
             return No(L.T("Blocked by Windows"), L.T("Windows has marked this mod's files as downloaded from the internet, which can stop them loading."), L.T("Press Unblock."), LoadFix.Unblock);
 
         var unknown = refs.Where(r => !ctx.Assemblies.Contains(r) && !r.StartsWith("System.", StringComparison.OrdinalIgnoreCase) && r != "Microsoft.CSharp"
-                                      && !(ctx.HasCompat5 && r.Equals("BepInEx", StringComparison.OrdinalIgnoreCase))).ToList();
+                                      && !(ctx.HasCompat5 && r.Equals("BepInEx", StringComparison.OrdinalIgnoreCase))
+                                      && !(ctx.HasCompat6 && r.StartsWith("BepInEx.", StringComparison.OrdinalIgnoreCase))).ToList();
         if (unknown.Count > 0)
             return No(L.T("Needs a missing library"), L.F("It needs files that aren't in the game: {0}. It may be made for a different game, or need another mod.", string.Join(", ", unknown.Take(4))),
                 L.T("Make sure it's a Nomad Drive mod, and install anything its Nexus page lists under Requirements."), LoadFix.FindRequirement, unknown[0]);
@@ -331,7 +338,7 @@ public static class ModLoadDoctor
     {
         if (!Directory.Exists(game.PluginsDir)) return new();
         return Directory.EnumerateFiles(game.PluginsDir, "*.dll", SearchOption.AllDirectories)
-            .Where(d => !BepInExCompat.IsCompatPlugin(game, d) && BuiltFor(References(d)) == major)
+            .Where(d => !BepInEx6Support.IsAnyCompatPlugin(game, d) && BuiltFor(References(d)) == major)
             .SelectMany(d => PluginInspector.Read(d).Select(p => p.Name).DefaultIfEmpty(Path.GetFileNameWithoutExtension(d)))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }

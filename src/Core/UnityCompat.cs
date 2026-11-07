@@ -197,7 +197,7 @@ public static class UnityCompat
         var managed = ManagedDir(game);
         if (!Directory.Exists(managed)) return result;
         var dlls = onlyDlls?.ToList() ?? (Directory.Exists(game.PluginsDir)
-            ? Directory.EnumerateFiles(game.PluginsDir, "*.dll", SearchOption.AllDirectories).Where(d => !BepInExCompat.IsCompatPlugin(game, d)).ToList()
+            ? Directory.EnumerateFiles(game.PluginsDir, "*.dll", SearchOption.AllDirectories).Where(d => !BepInEx6Support.IsAnyCompatPlugin(game, d)).ToList()
             : new List<string>());
         if (dlls.Count == 0) return result;
         using var gameApi = new GameApiScanner.GameApi(managed);

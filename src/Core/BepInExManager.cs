@@ -205,9 +205,9 @@ public static class BepInExManager
         Directory.CreateDirectory(game.PluginsDir);
         // Nomad Drive's mscorlib is stripped: without the full Mono libraries BepInEx's preloader crashes.
         if (BepInExChecker.EnsureNomadSetup(game)) written.Add(BepInExChecker.DotNetFixFolder + "/");
-        // BepInEx 6 can't load BepInEx 5 mods by itself: add the compatibility layer. Back on BepInEx 5 it isn't needed.
-        if (MajorOf(game) == 6) written.AddRange(BepInExCompat.Install(game));
-        else BepInExCompat.Remove(game);
+        // Neither BepInEx loads the other's mods by itself: add the compatibility layer for the other version.
+        if (MajorOf(game) == 6) { written.AddRange(BepInExCompat.Install(game)); BepInEx6Support.Remove(game); }
+        else { written.AddRange(BepInEx6Support.Install(game)); BepInExCompat.Remove(game); }
         // BepInEx 6: restore the Unity code the game's build stripped. A failed download doesn't fail the install;
         // Check BepInEx offers it again.
         if (MajorOf(game) == 6)

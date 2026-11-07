@@ -35,6 +35,7 @@
     <EmbeddedResource Include="Assets\DotNetFix.zip" LogicalName="Assets.DotNetFix.zip" />
     <!-- BepInEx 5 Compatibility (mod/BepInEx5Compat) + BepInEx 5's runtime (MIT): runs BepInEx 5 mods on BepInEx 6. -->
     <EmbeddedResource Include="Assets\BepInEx5Compat.zip" LogicalName="Assets.BepInEx5Compat.zip" />
+    <EmbeddedResource Include="Assets\BepInEx6Compat.zip" LogicalName="Assets.BepInEx6Compat.zip" />
     <EmbeddedResource Include="Assets\UnityCompat.zip" LogicalName="Assets.UnityCompat.zip" />
   </ItemGroup>
 

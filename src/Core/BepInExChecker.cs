@@ -16,6 +16,7 @@ public enum CheckFix
     UpdateBepInEx,
     UpgradeToBepInEx6,  // BepInEx 5 is installed: move to BepInEx 6 + BepInEx 5 support (plugins and settings kept)
     InstallCompat,      // BepInEx 6 without the BepInEx 5 compatibility layer (or an older copy of it)
+    InstallCompat6,     // BepInEx 5 without the BepInEx 6 compatibility layer (or an older copy of it)
     WriteDoorstop,      // write a working doorstop_config.ini
     EnableDoorstop,
     InstallDotNetFix,   // Nomad Drive's full .NET libraries + point doorstop at them
@@ -127,9 +128,21 @@ public static class BepInExChecker
                     Add(AreaInstall, CheckLevel.Ok, built5.Count > 0 ? L.F("BepInEx 5 support is installed ({0} BepInEx 5 mod(s)).", built5.Count) : L.T("BepInEx 5 support is installed."));
             }
             else
-                Add(AreaInstall, CheckLevel.Warning, L.F("BepInEx {0} is installed. This app now uses BepInEx 6.", status.Version ?? "5"),
+            {
+                Add(AreaInstall, CheckLevel.Info, L.F("BepInEx {0} is installed. This app now uses BepInEx 6.", status.Version ?? "5"),
                     L.T("Upgrading installs BepInEx 6 with BepInEx 5 support, so your current mods keep working and mods built for BepInEx 6 load too. Your plugins and settings are kept, the old BepInEx goes to a backup, and you can switch back in Check BepInEx."),
                     CheckFix.UpgradeToBepInEx6);
+                var built6 = ModLoadDoctor.ModsBuiltFor(game, "6");
+                if (!BepInEx6Support.IsInstalled(game))
+                    Add(AreaInstall, built6.Count > 0 ? CheckLevel.Error : CheckLevel.Warning, L.T("BepInEx 6 support isn't installed."),
+                        (built6.Count > 0 ? L.F("{0} of your mods are built for BepInEx 6 and can't load without it:\n", built6.Count) + string.Join("\n", built6.Take(12).Select(m => "• " + m)) + "\n\n" : "") +
+                        L.T("BepInEx 5 can't load BepInEx 6 mods by itself. The BepInEx 6 compatibility layer runs them beside BepInEx 5."),
+                        CheckFix.InstallCompat6);
+                else if (BepInEx6Support.IsOutdated(game))
+                    Add(AreaInstall, CheckLevel.Info, L.T("A newer BepInEx 6 support layer is available."), L.F("You have {0}; this app has {1}.", BepInEx6Support.Installed(game), BepInEx6Support.Bundled()), CheckFix.InstallCompat6);
+                else
+                    Add(AreaInstall, CheckLevel.Ok, built6.Count > 0 ? L.F("BepInEx 6 support is installed ({0} BepInEx 6 mod(s)).", built6.Count) : L.T("BepInEx 6 support is installed."));
+            }
 
             var missing = coreFiles.Where(f => !File.Exists(Path.Combine(core, f))).ToList();
             var empty = coreFiles.Where(f => File.Exists(Path.Combine(core, f)) && new FileInfo(Path.Combine(core, f)).Length == 0).ToList();
@@ -284,7 +297,7 @@ public static class BepInExChecker
                 {
                     var ctx = ModLoadDoctor.Gather(game, manifest);
                     var entries = manifest.Mods.Where(m => m.Id != "bepinex").Select(m => (Name: m.Name, Files: (IEnumerable<string>)m.Files, Off: m.Disabled))
-                        .Concat(ModInstaller.FindUntracked(game, manifest).Where(u => !u.Rel.EndsWith("/" + BepInExCompat.PluginFolder, StringComparison.OrdinalIgnoreCase))
+                        .Concat(ModInstaller.FindUntracked(game, manifest).Where(u => !BepInEx6Support.IsAnyCompatFolder(u.Rel))
                             .Select(u => (Name: Path.GetFileNameWithoutExtension(u.Rel), Files: (IEnumerable<string>)new[] { u.Rel }, Off: u.Disabled)));
                     var notStarted = entries.Select(e => (e.Name, D: ModLoadDoctor.Diagnose(ctx, e.Files, e.Off))).Where(x => x.D.State == LoadState.DidntStart).ToList();
                     if (notStarted.Count > 0)
@@ -376,6 +389,11 @@ public static class BepInExChecker
             {
                 var w = BepInExCompat.Install(game);
                 return L.F("Installed BepInEx 5 support ({0} files).", w.Count);
+            }
+            case CheckFix.InstallCompat6:
+            {
+                var w = BepInEx6Support.Install(game);
+                return L.F("Installed BepInEx 6 support ({0} files).", w.Count);
             }
             case CheckFix.InstallDotNetFix:
                 InstallDotNetFix(game);

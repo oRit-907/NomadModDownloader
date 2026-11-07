@@ -1368,7 +1368,7 @@ internal sealed partial class MainForm : Form
         {
             foreach (var (rel, disabled) in ModInstaller.FindUntracked(_game, _manifest))
             {
-                if (rel.EndsWith("/" + BepInExCompat.PluginFolder, StringComparison.OrdinalIgnoreCase)) continue; // part of BepInEx, not a mod
+                if (BepInEx6Support.IsAnyCompatFolder(rel)) continue; // part of BepInEx, not a mod
                 var folderName = Path.GetFileName(rel);
                 var item = new ListViewItem(folderName) { Tag = new Untracked(rel, disabled), ForeColor = Theme.Muted };
                 item.SubItems.Add("");
