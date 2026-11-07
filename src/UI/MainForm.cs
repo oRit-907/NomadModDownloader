@@ -442,7 +442,31 @@ internal sealed partial class MainForm : Form
         // Details open beside the grid (Details on a card); Close gives the grid the whole width again.
         var close = new LinkLabel { Text = "✕ " + L.T("Close"), AutoSize = true, Font = Theme.Bold, LinkColor = Theme.Muted, ActiveLinkColor = Theme.Text, BackColor = Color.Transparent, Margin = new Padding(0, 0, 0, 10), LinkBehavior = LinkBehavior.NeverUnderline };
         close.LinkClicked += (_, _) => ShowBrowseCard(false);
-        stack.Controls.AddRange(new Control[] { close, _picture, _modTitle, _modMeta, _reqLabel, _modSummary, _translateLink, fileLabel, _files, _showOld, _fileInfo, actions });
+        // More about the mod, like the in-game details page: numbers, your copy, the full description, recent changes, links.
+        _modStats = new Label { ForeColor = Theme.Muted, Font = Theme.Small, AutoSize = true, MaximumSize = new Size(W, 0), Margin = new Padding(0, 0, 0, 10), BackColor = Color.Transparent };
+        _modYours = new Label { ForeColor = Theme.Good, Font = Theme.Bold, AutoSize = true, MaximumSize = new Size(W, 0), Margin = new Padding(0, 0, 0, 10), BackColor = Color.Transparent, Visible = false };
+        Label Heading(string t) => new() { Text = t, ForeColor = Theme.Accent, Font = Theme.Bold, AutoSize = true, Margin = new Padding(0, 16, 0, 6), BackColor = Color.Transparent };
+        _aboutHead = Heading(L.T("About this mod"));
+        _modAbout = new Label { ForeColor = Theme.Text, Font = Theme.Small, AutoSize = true, MaximumSize = new Size(W, 0), Margin = new Padding(0, 0, 0, 4), BackColor = Color.Transparent };
+        _changesHead = Heading(L.T("Recent changes"));
+        _modChanges = new Label { ForeColor = Theme.Muted, Font = Theme.Small, AutoSize = true, MaximumSize = new Size(W, 0), Margin = new Padding(0, 0, 0, 4), BackColor = Color.Transparent };
+        var linksHead = Heading(L.T("On Nexus"));
+        var links = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = Color.Transparent, WrapContents = true, Margin = new Padding(0, 0, 0, 8) };
+        foreach (var (text, tab) in new[] { (L.T("Description"), ""), (L.T("Files"), "?tab=files"), (L.T("Posts"), "?tab=posts"), (L.T("Bugs"), "?tab=bugs"), (L.T("Images"), "?tab=images") })
+        {
+            var b = Theme.Button(text);
+            b.Font = Theme.Small;
+            b.Margin = new Padding(0, 0, 6, 6);
+            b.Click += async (_, _) =>
+            {
+                if (_selectedMod == null) return;
+                var url = _selectedMod.PageUrl + tab;
+                if (!_settings.UseBuiltInBrowser || !await OpenInBuiltInBrowserAsync(url)) Web.Open(url);
+            };
+            links.Controls.Add(b);
+        }
+        stack.Controls.AddRange(new Control[] { close, _picture, _modTitle, _modMeta, _modStats, _modYours, _reqLabel, _modSummary, _translateLink, fileLabel, _files, _showOld, _fileInfo, actions,
+            _aboutHead, _modAbout, _changesHead, _modChanges, linksHead, links });
         card.Controls.Add(stack);
 
         // ---- left: search + list ----
@@ -1033,6 +1057,7 @@ internal sealed partial class MainForm : Form
     }
 
     private GlassPanel _browseCard = null!;
+    private Label _modStats = null!, _modYours = null!, _aboutHead = null!, _modAbout = null!, _changesHead = null!, _modChanges = null!;
     private FlowLayoutPanel _chips = null!;
     private readonly List<ListViewItem> _browseAll = new();
     private string? _category; // chip filter (null = all)
@@ -1138,7 +1163,24 @@ internal sealed partial class MainForm : Form
         if (_modList.SelectedItems.Count == 0 || _modList.SelectedItems[0].Tag is not ModInfo mod) return;
         _selectedMod = mod;
         _modTitle.Text = mod.Name;
-        _modMeta.Text = $"by {mod.Author}" + (string.IsNullOrEmpty(mod.Category) ? "" : "  ·  " + mod.Category) + "  ·  v" + mod.Version + "  ·  " + $"{Fmt.Count(mod.Downloads)} downloads";
+        _modMeta.Text = $"by {mod.Author}" + (string.IsNullOrEmpty(mod.Category) ? "" : "  ·  " + mod.Category) + "  ·  v" + mod.Version.TrimStart('v', 'V');
+        _modStats.Text = string.Join("  ·  ", new[]
+        {
+            L.F("{0} downloads", Fmt.Count(mod.Downloads)), L.F("{0} endorsements", Fmt.Count(mod.Endorsements)),
+            mod.UpdatedAt is { } upd ? L.F("updated {0}", Fmt.Date(upd.ToLocalTime())) : "", L.F("mod #{0}", mod.ModId),
+        }.Where(x => x.Length > 0));
+        var mine = _manifest.Mods.FirstOrDefault(x => x.ModId == mod.ModId);
+        _modYours.Visible = mine != null;
+        if (mine != null)
+        {
+            _modYours.Text = (mine.Update != null ? L.F("You have v{0} — v{1} is out", mine.Version, mine.Update.Version) : L.F("You have v{0}", mine.Version))
+                             + (mine.Disabled ? "  ·  " + L.T("switched off") : "") + "  ·  " + L.F("installed {0}", Fmt.Date(mine.InstalledAt));
+            _modYours.ForeColor = mine.Update != null ? Theme.Accent : mine.Disabled ? Theme.Warn : Theme.Good;
+        }
+        _modAbout.Text = L.T("Loading…");
+        _aboutHead.Visible = _modAbout.Visible = true;
+        _changesHead.Visible = _modChanges.Visible = false;
+        _ = ShowDescriptionAsync(mod);
         _showingOriginal = false;
         _ = ShowSummaryAsync(mod);
         _nexusButton.Enabled = true;
@@ -1161,6 +1203,7 @@ internal sealed partial class MainForm : Form
             if (_selectedMod != mod) return;
             _allFiles = files;
             PopulateFiles();
+            ShowRecentChanges(files);
             var already = _manifest.Mods.FirstOrDefault(m => m.ModId == mod.ModId);
             var byHand = already == null && HandInstalledKeys().Contains(NameKey(mod.Name));
             _installButton.Text = already != null || byHand ? L.T("Reinstall") : L.T("Install");
@@ -1168,6 +1211,38 @@ internal sealed partial class MainForm : Form
             if (mod.ModId == SelfModId) ShowSelfPageState();
         }
         catch (Exception ex) { _fileInfo.Text = L.T("Couldn't load files: ") + ex.Message; }
+    }
+
+    private readonly Dictionary<int, string> _descriptions = new();
+
+    /// <summary>The mod page's full description (cached per mod).</summary>
+    private async Task ShowDescriptionAsync(ModInfo mod)
+    {
+        try
+        {
+            if (!_descriptions.TryGetValue(mod.ModId, out var text))
+                _descriptions[mod.ModId] = text = await _api.GetDescriptionAsync(mod.ModId, _closing.Token);
+            if (_selectedMod != mod) return;
+            // Long pages: the start, with the rest a click away on Nexus.
+            const int Max = 2500;
+            _modAbout.Text = text.Length == 0 ? L.T("This mod has no description.") : text.Length > Max ? text[..Max].TrimEnd() + "…\n\n" + L.T("(The rest is on the mod's Nexus page.)") : text;
+        }
+        catch (OperationCanceledException) { }
+        catch { if (_selectedMod == mod) _aboutHead.Visible = _modAbout.Visible = false; }
+    }
+
+    /// <summary>The last few versions' changelogs, newest first.</summary>
+    private void ShowRecentChanges(List<ModFileInfo> files)
+    {
+        var lines = new List<string>();
+        foreach (var f in files.Where(f => f.Changelog.Count > 0).OrderByDescending(f => f.Date).GroupBy(f => f.Version).Select(g => g.First()).Take(4))
+        {
+            lines.Add("v" + f.Version.TrimStart('v', 'V') + "  ·  " + Fmt.Date(f.Date.ToLocalTime()));
+            lines.AddRange(f.Changelog.Take(6).Select(c => "•  " + c));
+            lines.Add("");
+        }
+        _changesHead.Visible = _modChanges.Visible = lines.Count > 0;
+        _modChanges.Text = string.Join("\n", lines).Trim();
     }
 
     /// <summary>Shows the summary in the app language (translated live), with a link to flip to the original.</summary>

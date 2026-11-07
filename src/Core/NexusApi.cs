@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -198,6 +199,42 @@ public sealed class NexusApi
     }
 
     /// <summary>What the mod's page lists under "Requirements" (Nomad Drive mods and outside downloads).</summary>
+    /// <summary>The mod page's full description, as plain text (Nexus stores it as BBCode).</summary>
+    public async Task<string> GetDescriptionAsync(int modId, CancellationToken ct = default)
+    {
+        var data = await QueryAsync("query($m: ID!, $g: ID!) { mod(modId: $m, gameId: $g) { description } }",
+            new { m = modId, g = GameId }, ct);
+        return BbText(WebUtility.HtmlDecode(Str(data["mod"]?["description"])));
+    }
+
+    /// <summary>Nexus descriptions are BBCode with &lt;br /&gt; line breaks: plain text with bullets (as the in-game menu shows them).</summary>
+    public static string BbText(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        s = s.Replace("\r", "");
+        if (s.Contains("<br", StringComparison.OrdinalIgnoreCase)) s = s.Replace("\n", "");
+        s = s.Replace("<br />", "\n").Replace("<br/>", "\n").Replace("<br>", "\n");
+        var o = RegexOptions.IgnoreCase | RegexOptions.Singleline;
+        s = Regex.Replace(s, @"\[img[^\]]*\].*?\[/img\]", "", o);
+        s = Regex.Replace(s, @"\[youtube\].*?\[/youtube\]", "", o);
+        s = Regex.Replace(s, @"\[\*\]", "\n•  ");
+        s = Regex.Replace(s, @"\[/\*\]", "");
+        s = Regex.Replace(s, @"\[/?list[^\]]*\]", "\n");
+        s = Regex.Replace(s, @"\[line\]", "\n――――――\n", o);
+        s = Regex.Replace(s, @"\[/?(heading|center|quote|spoiler|code)[^\]]*\]", "\n", o);
+        s = Regex.Replace(s, @"\[/?[a-zA-Z]+(=[^\]]*)?\]", "");
+        s = Regex.Replace(s, @"<[^>]+>", "");
+        var sb = new System.Text.StringBuilder();
+        var blank = 0;
+        foreach (var l in s.Split('\n').Select(l => l.Trim()))
+        {
+            if (l.Length == 0 || l == "•") { if (++blank == 1 && sb.Length > 0) sb.Append('\n'); continue; }
+            blank = 0;
+            sb.Append(l).Append('\n');
+        }
+        return sb.ToString().Trim();
+    }
+
     public async Task<List<ModRequirement>> GetRequirementsAsync(int modId, CancellationToken ct = default)
     {
         var data = await QueryAsync("query($m: ID!, $g: ID!) { mod(modId: $m, gameId: $g) { modRequirements { nexusRequirements { nodes { modId modName gameId externalRequirement url notes } } } } }",
