@@ -1340,19 +1340,15 @@ internal sealed partial class MainForm : Form
         // Not installed or broken: show exactly what will happen and wait for a yes.
         if (game.IsRunning()) { MessageBox.Show(this, L.T("Close Nomad Drive first, then try again."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information); return false; }
 
-        var plan = await BepInExManager.PlanAsync(_http, game, _closing.Token);
-
         var why = s.State == BepInExState.Broken ? L.F("BepInEx looks broken: {0}", s.Message) : L.T("Nomad Drive mods need BepInEx, and it isn't installed yet.");
-        var text = L.F("{0}\n\nInstall BepInEx {1} ({2}) now?\n\n", why, plan.Version, plan.Architecture) +
-                   L.F("From:  {0}", plan.Url.Host + plan.Url.AbsolutePath) + (plan.SizeBytes > 0 ? $"  ({Fmt.Size(plan.SizeBytes)})" : "") + "\n" +
-                   L.F("Into:  {0}\n\n", game.Root) +
-                   L.T("It adds winhttp.dll, doorstop_config.ini, .doorstop_version, changelog.txt and the BepInEx folder, plus support for mods built for BepInEx 5. Nothing outside the game folder is touched.\n\n") +
-                   L.T("Afterwards, launch the game once so BepInEx finishes setting up.");
-        if (MessageBox.Show(this, text, L.T("Install BepInEx?"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+        // Broken but recognisable: reinstall the same version. Not installed: the user picks.
+        int? major = s.State == BepInExState.Broken && BepInExManager.MajorOf(game) is int m and > 0 ? m : AskBepInExVersion(why + " " + L.T("Afterwards, launch the game once so BepInEx finishes setting up."));
+        if (major == null)
         {
             Log(L.T("BepInEx install declined."));
             return false;
         }
+        var plan = await PlanForAsync(game, major.Value);
 
         SetStatus(L.F("Downloading BepInEx {0}…", plan.Version));
         var written = await BepInExManager.InstallAsync(_http, game, plan, Progress(), _closing.Token);
@@ -1362,6 +1358,34 @@ internal sealed partial class MainForm : Form
         SetStatus(L.F("BepInEx {0} installed.", plan.Version));
         return true;
     }
+
+    /// <summary>
+    /// Asks which BepInEx to install when there isn't one yet. Returns 6, 5, or null (cancelled).
+    /// Either way the other version's mods keep working through its compatibility layer.
+    /// </summary>
+    private int? AskBepInExVersion(string why)
+    {
+        var six = new TaskDialogCommandLinkButton(L.T("BepInEx 6 (recommended)"),
+            L.F("BepInEx {0}, with BepInEx 5 support so mods built for BepInEx 5 run too.", BepInExManager.Bep6Version)) { Tag = 6 };
+        var five = new TaskDialogCommandLinkButton(L.T("BepInEx 5"),
+            L.T("The newest stable BepInEx 5, with BepInEx 6 support so mods built for BepInEx 6 run too.")) { Tag = 5 };
+        var page = new TaskDialogPage
+        {
+            Caption = L.T("Install BepInEx"),
+            Heading = L.T("Which BepInEx do you want?"),
+            Text = why + "\n\n" + L.F("It goes into {0}. Nothing outside the game folder is touched, and you can switch later in Check BepInEx.", _game?.Root ?? ""),
+            Buttons = { six, five, TaskDialogButton.Cancel },
+            DefaultButton = six,
+            Icon = TaskDialogIcon.Information,
+            AllowCancel = true,
+        };
+        var picked = TaskDialog.ShowDialog(this, page);
+        return picked.Tag is int v ? v : null;
+    }
+
+    /// <summary>What to download for a BepInEx version (5 = newest stable BepInEx 5, 6 = the pinned BepInEx 6).</summary>
+    private async Task<BepInExPlan> PlanForAsync(GameInstall game, int major) =>
+        major == 5 ? await BepInExManager.Plan5Async(_http, game, _closing.Token) : BepInExManager.Plan6(game);
 
     // =====================================================================
     // Installed tab

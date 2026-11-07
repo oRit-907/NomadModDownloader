@@ -105,7 +105,7 @@ public static class BepInExChecker
         var proxy = Path.Combine(game.Root, "winhttp.dll");
         if (status.State == BepInExState.NotInstalled)
         {
-            Add(AreaInstall, CheckLevel.Error, L.T("BepInEx isn't installed."), L.T("Nomad Drive mods need BepInEx. The fix downloads BepInEx 6 from BepInEx's GitHub and sets it up for Nomad Drive, with support for BepInEx 5 mods."), CheckFix.InstallBepInEx);
+            Add(AreaInstall, CheckLevel.Error, L.T("BepInEx isn't installed."), L.T("Nomad Drive mods need BepInEx. The fix lets you pick BepInEx 6 (recommended) or BepInEx 5, downloads it from BepInEx's GitHub and sets it up for Nomad Drive, with support for the other version's mods."), CheckFix.InstallBepInEx);
         }
         else
         {

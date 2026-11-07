@@ -177,8 +177,17 @@ internal sealed partial class MainForm
         BepInExPlan? plan = null;
         if (bep != null)
         {
-            // Updating stays on BepInEx 5 (people who switched back); everything else installs BepInEx 6.
-            plan = bep.Fix == CheckFix.UpdateBepInEx ? await BepInExManager.Plan5Async(_http, game, _closing.Token) : BepInExManager.Plan6(game);
+            // Installing: the user picks. Updating stays on BepInEx 5, upgrading goes to 6, and a repair reinstalls
+            // whichever version is there (BepInEx 6 when it can't tell).
+            int? major = bep.Fix switch
+            {
+                CheckFix.InstallBepInEx => AskBepInExVersion(L.T("Nomad Drive mods need BepInEx, and it isn't installed yet.")),
+                CheckFix.UpdateBepInEx => 5,
+                CheckFix.UpgradeToBepInEx6 => 6,
+                _ => BepInExManager.MajorOf(game) == 5 ? 5 : 6,
+            };
+            if (major == null) { SetStatus(L.T("Nothing changed.")); return; }
+            plan = await PlanForAsync(game, major.Value);
         }
 
         var lines = new List<string>();
