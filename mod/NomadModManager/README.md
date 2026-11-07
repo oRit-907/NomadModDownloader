@@ -37,7 +37,7 @@ The menu checks a new DLL before starting it without a restart. To decide for yo
   rebinding. Running mods take changes right away; the rest read them from their config file at their next start.
 - **Profiles**: save which mods are on and switch sets in one go (kept in `BepInEx\NomadModManager\profiles.json`).
 - **Changes** waiting for a restart, with Undo.
-- Opens from the main menu, with **F8** anywhere (also during play), or by holding the controller's View button.
+- Opens from the **Mods** button on the main menu and in the pause (Esc) menu. An optional hotkey (`Hotkey` in the config) opens it anywhere.
   Works with a **controller**: d-pad/stick to move, A to press, B back, LB/RB to switch pages, right stick to scroll.
 
 Installs, updates and specific versions are handed to Nomad Mod Downloader (2.6.8 or newer for several at once and

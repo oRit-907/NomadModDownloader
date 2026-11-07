@@ -82,6 +82,7 @@ namespace NomadModManager
 
         // Opened from the main menu, or with the hotkey during play
         public bool OpenedFromMainMenu { get; private set; }
+        public bool OpenedFromPause { get; private set; }
         private CursorLockMode _cursorLock;
         private UnityEngine.EventSystems.EventSystem _events;
         private bool _eventsWas;
@@ -128,11 +129,20 @@ namespace NomadModManager
         // ==================================================================
         // Open / close
 
-        public void Open(MainMenuPanel panel)
+        /// <summary>From the pause (Esc) menu: shown over the game, with the pause menu hidden until this closes.</summary>
+        public void OpenFromPause(Component pause)
+        {
+            Open(pause);
+            OpenedFromMainMenu = false;
+            OpenedFromPause = true;
+        }
+
+        public void Open(Component panel)
         {
             if (IsOpen) return;
             IsOpen = true;
-            OpenedFromMainMenu = panel != null;
+            OpenedFromMainMenu = panel is MainMenuPanel;
+            OpenedFromPause = false;
             _scrollY = 0;
             HookText();
             _cat.Refresh();
@@ -140,7 +150,7 @@ namespace NomadModManager
             _problems.Clear();
             FindGameArt(panel);
             try { _cursorLock = Cursor.lockState; _cursorVisible = Cursor.visible; _cursorSaved = true; } catch { }
-            if (panel == null)
+            if (!OpenedFromMainMenu)
             {
                 // During play the game's own UI would get our clicks too: pause its input while the menu is open.
                 try { _events = UnityEngine.EventSystems.EventSystem.current; if (_events != null) { _eventsWas = _events.enabled; _events.enabled = false; } } catch { _events = null; }
@@ -169,6 +179,7 @@ namespace NomadModManager
             _editing = _capturing = _dragging = null;
             _naming = false;
             if (_cursorSaved && !OpenedFromMainMenu) { try { Cursor.lockState = _cursorLock; Cursor.visible = _cursorVisible; } catch { } }
+            OpenedFromPause = false;
             _cursorSaved = false;
             if (_events != null) { try { _events.enabled = _eventsWas; } catch { } _events = null; }
             if (_blocked != null) { _blocked.blocksRaycasts = _blockedWas; _blocked = null; }
@@ -341,7 +352,7 @@ namespace NomadModManager
         }
 
         /// <summary>The game's logo sprite and where it sits on screen, so the left column lines up with the real menu.</summary>
-        private void FindGameArt(MainMenuPanel panel)
+        private void FindGameArt(Component panel)
         {
             if (panel == null) return;
             try
@@ -442,7 +453,7 @@ namespace NomadModManager
             }
             if (_padMode)
                 GUI.Label(new Rect(r.x, y - 6 * _s, r.width, 22 * _s), "LB / RB switch pages   ·   B back", Center(_small, CMuted));
-            var back = OpenedFromMainMenu ? "Back" : "Close";
+            var back = OpenedFromMainMenu || OpenedFromPause ? "Back" : "Close";
             var bs = _nav.CalcSize(new GUIContent(back));
             var br = new Rect(r.center.x - bs.x / 2, y + 10 * _s, bs.x, 50 * _s);
             GUI.Label(br, back, Tint(_nav, br.Contains(Event.current.mousePosition) ? CAccent : CMuted));

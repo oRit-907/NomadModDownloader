@@ -8,7 +8,7 @@ namespace NomadModManager
     /// BepInEx 6 preloader patcher: applies mod updates, removals and enable/disable changes that were queued while the
     /// game was running. Patchers are created before BepInEx reads any plugin, so the work happens in the constructor.
     /// </summary>
-    [PatcherPluginInfo("akorit.nomadmodmanager.patcher", "Nomad Mod Manager", "1.1.0")]
+    [PatcherPluginInfo("akorit.nomadmodmanager.patcher", "Nomad Mod Manager", "1.1.1")]
     public sealed class NomadModManagerPatcher : BasePatcher
     {
         public NomadModManagerPatcher()
